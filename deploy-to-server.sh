@@ -10,7 +10,7 @@
 
 set -e
 
-SERVER_IP="196.190.142.68"
+SERVER_IP="146.190.142.68"
 SSH_KEY="$HOME/.ssh/id_ed25519"
 REPO_URL="https://github.com/iamthetonyb/AIDE.git"
 REMOTE_PATH="/opt/atlas"
