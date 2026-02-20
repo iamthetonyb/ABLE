@@ -1,0 +1,491 @@
+"""
+ATLAS Skill Orchestrator
+
+Automatically detects user intent and triggers appropriate skills/tools.
+No explicit invocation needed - context-aware tool selection.
+"""
+
+import asyncio
+import re
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class IntentType(str, Enum):
+    """Detected user intent categories"""
+    COMMUNICATION = "communication"  # Respond, reply, email, message
+    RESEARCH = "research"           # Look up, find out, investigate
+    WRITING = "writing"             # Write, draft, create content
+    CODING = "coding"               # Code, implement, debug, fix
+    ANALYSIS = "analysis"           # Analyze, review, compare
+    PLANNING = "planning"           # Plan, strategy, design
+    MEMORY = "memory"               # Remember, recall, store
+    SYSTEM = "system"               # Status, settings, config
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class IntentMatch:
+    """A detected intent with confidence"""
+    intent: IntentType
+    confidence: float  # 0.0 - 1.0
+    triggers: List[str]  # Which patterns matched
+    extracted: Dict[str, Any] = field(default_factory=dict)  # Extracted parameters
+
+
+@dataclass
+class SkillInvocation:
+    """A skill to invoke based on detected intent"""
+    skill_name: str
+    priority: int  # Higher = invoke first
+    parameters: Dict[str, Any]
+    depends_on: List[str] = field(default_factory=list)
+
+
+@dataclass
+class OrchestratorPlan:
+    """Execution plan for a user request"""
+    intents: List[IntentMatch]
+    skills: List[SkillInvocation]
+    requires_research: bool = False
+    requires_approval: bool = False
+    estimated_complexity: str = "simple"  # simple, moderate, complex
+
+
+class IntentDetector:
+    """
+    Detects user intent from natural language input.
+    Uses pattern matching + heuristics for fast detection.
+    """
+
+    def __init__(self):
+        # Intent patterns: (pattern, intent, confidence_boost)
+        self.patterns = {
+            IntentType.COMMUNICATION: [
+                (r'\b(respond|reply|answer)\s+(to|back)', 0.9),
+                (r'\bemail\s+\w+', 0.85),
+                (r'\b(message|text|reach out)', 0.8),
+                (r'\b(draft|compose)\s+.*?(email|message|reply)', 0.9),
+                (r'\b(follow up|follow-up)', 0.75),
+                (r'\bget back to', 0.8),
+            ],
+            IntentType.RESEARCH: [
+                (r'\b(research|look up|look into|find out)', 0.9),
+                (r'\b(investigate|explore|dig into)', 0.85),
+                (r'\bwhat (is|are|does|do)\b', 0.6),
+                (r'\bhow (to|do|does|can)', 0.6),
+                (r'\b(learn about|understand)', 0.75),
+                (r'\b(compare|contrast)\b', 0.7),
+            ],
+            IntentType.WRITING: [
+                (r'\bwrite\s+\w+', 0.85),
+                (r'\b(create|draft|compose)\s+(content|copy|post)', 0.9),
+                (r'\b(blog|article|landing page)', 0.8),
+                (r'\b(ad|advertisement|pitch)', 0.85),
+                (r'\bcopywriting', 0.95),
+                (r'\b(headline|tagline|slogan)', 0.8),
+            ],
+            IntentType.CODING: [
+                (r'\b(code|implement|build|develop)', 0.85),
+                (r'\b(fix|debug|solve)\s+.*?(bug|error|issue)', 0.9),
+                (r'\b(refactor|optimize|improve)\s+.*?(code|function)', 0.85),
+                (r'\bwhy (is|isn\'t|doesn\'t|won\'t)\s+.*?(working|running)', 0.8),
+                (r'\b(test|unittest|integration)', 0.75),
+            ],
+            IntentType.ANALYSIS: [
+                (r'\banalyze\b', 0.9),
+                (r'\b(review|audit|assess)', 0.85),
+                (r'\b(compare|evaluate|benchmark)', 0.8),
+                (r'\bwhat\'?s (wrong|the issue)', 0.75),
+                (r'\b(breakdown|deep dive)', 0.8),
+            ],
+            IntentType.PLANNING: [
+                (r'\bplan\s+\w+', 0.85),
+                (r'\b(strategy|roadmap|approach)', 0.8),
+                (r'\bhow (should|can) (we|I)', 0.75),
+                (r'\b(design|architect|structure)', 0.8),
+                (r'\b(break down|decompose)', 0.75),
+            ],
+            IntentType.MEMORY: [
+                (r'\bremember\s+', 0.9),
+                (r'\b(store|save|note)\s+(this|that)', 0.85),
+                (r'\brecall\b', 0.9),
+                (r'\b(what did|you told me)', 0.8),
+                (r'\bforget\b', 0.75),
+            ],
+            IntentType.SYSTEM: [
+                (r'\bstatus\b', 0.9),
+                (r'\b(settings|config|configure)', 0.85),
+                (r'\bclock (in|out)', 0.9),
+                (r'\b(help|commands)', 0.7),
+            ],
+        }
+
+        # Context keywords that boost certain intents
+        self.context_boosters = {
+            IntentType.COMMUNICATION: [
+                "prospect", "client", "customer", "lead", "contact",
+                "inbox", "mailbox", "sender",
+            ],
+            IntentType.WRITING: [
+                "audience", "target", "convert", "persuade", "sell",
+                "engagement", "click", "cta",
+            ],
+            IntentType.RESEARCH: [
+                "competitor", "market", "trend", "data", "source",
+                "citation", "reference",
+            ],
+        }
+
+    def detect(self, text: str) -> List[IntentMatch]:
+        """Detect intents in user input"""
+        text_lower = text.lower()
+        matches = []
+
+        for intent, patterns in self.patterns.items():
+            triggers = []
+            max_confidence = 0.0
+
+            for pattern, confidence in patterns:
+                if re.search(pattern, text_lower):
+                    triggers.append(pattern)
+                    max_confidence = max(max_confidence, confidence)
+
+            # Apply context boosters
+            if intent in self.context_boosters:
+                for booster in self.context_boosters[intent]:
+                    if booster in text_lower:
+                        max_confidence = min(1.0, max_confidence + 0.1)
+
+            if triggers:
+                matches.append(IntentMatch(
+                    intent=intent,
+                    confidence=max_confidence,
+                    triggers=triggers,
+                ))
+
+        # Sort by confidence
+        matches.sort(key=lambda m: m.confidence, reverse=True)
+
+        return matches
+
+
+class SkillOrchestrator:
+    """
+    Main orchestrator that plans and executes skill invocations.
+
+    Flow:
+    1. Detect intent from user input
+    2. Map intents to skills
+    3. Build execution plan
+    4. Execute skills in dependency order
+    5. Aggregate results
+    """
+
+    def __init__(
+        self,
+        llm_provider: Any = None,
+        enable_research: bool = True,
+    ):
+        self.llm_provider = llm_provider
+        self.enable_research = enable_research
+        self.intent_detector = IntentDetector()
+
+        # Skill registry: intent -> skill configurations
+        self.skill_map = {
+            IntentType.COMMUNICATION: [
+                SkillInvocation(
+                    skill_name="copywriting",
+                    priority=10,
+                    parameters={"mode": "response"},
+                ),
+            ],
+            IntentType.RESEARCH: [
+                SkillInvocation(
+                    skill_name="web_search",
+                    priority=10,
+                    parameters={},
+                ),
+                SkillInvocation(
+                    skill_name="analysis",
+                    priority=5,
+                    parameters={},
+                    depends_on=["web_search"],
+                ),
+            ],
+            IntentType.WRITING: [
+                SkillInvocation(
+                    skill_name="copywriting",
+                    priority=10,
+                    parameters={"mode": "create"},
+                ),
+            ],
+            IntentType.CODING: [
+                SkillInvocation(
+                    skill_name="code_analysis",
+                    priority=10,
+                    parameters={},
+                ),
+            ],
+            IntentType.ANALYSIS: [
+                SkillInvocation(
+                    skill_name="analysis",
+                    priority=10,
+                    parameters={},
+                ),
+            ],
+            IntentType.PLANNING: [
+                SkillInvocation(
+                    skill_name="goal_planner",
+                    priority=10,
+                    parameters={},
+                ),
+            ],
+            IntentType.MEMORY: [
+                SkillInvocation(
+                    skill_name="memory",
+                    priority=10,
+                    parameters={},
+                ),
+            ],
+        }
+
+        # Skill implementations (lazy loaded)
+        self._skills: Dict[str, Callable] = {}
+
+    def register_skill(
+        self,
+        name: str,
+        handler: Callable,
+        auto_trigger: Optional[Callable[[str, Dict], bool]] = None,
+    ):
+        """Register a skill implementation"""
+        self._skills[name] = {
+            "handler": handler,
+            "auto_trigger": auto_trigger,
+        }
+
+    async def plan(
+        self,
+        user_input: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> OrchestratorPlan:
+        """
+        Create an execution plan for the user's request.
+        """
+        context = context or {}
+
+        # Detect intents
+        intents = self.intent_detector.detect(user_input)
+
+        if not intents:
+            return OrchestratorPlan(
+                intents=[IntentMatch(
+                    intent=IntentType.UNKNOWN,
+                    confidence=0.0,
+                    triggers=[],
+                )],
+                skills=[],
+            )
+
+        # Check for skills that want to auto-trigger
+        auto_triggered_skills = []
+        for skill_name, skill_info in self._skills.items():
+            auto_trigger = skill_info.get("auto_trigger")
+            if auto_trigger and auto_trigger(user_input, context):
+                auto_triggered_skills.append(SkillInvocation(
+                    skill_name=skill_name,
+                    priority=15,  # High priority for auto-triggered
+                    parameters={"auto_triggered": True},
+                ))
+
+        # Map intents to skills
+        skills = auto_triggered_skills.copy()
+        seen_skills = {s.skill_name for s in skills}
+
+        for intent in intents:
+            if intent.confidence < 0.5:
+                continue
+
+            skill_configs = self.skill_map.get(intent.intent, [])
+            for config in skill_configs:
+                if config.skill_name not in seen_skills:
+                    skills.append(config)
+                    seen_skills.add(config.skill_name)
+
+        # Sort by priority
+        skills.sort(key=lambda s: s.priority, reverse=True)
+
+        # Determine complexity
+        complexity = "simple"
+        if len(skills) > 2:
+            complexity = "moderate"
+        if len(intents) > 2 or any(s.depends_on for s in skills):
+            complexity = "complex"
+
+        # Check if research needed
+        requires_research = any(
+            i.intent == IntentType.RESEARCH for i in intents
+        )
+
+        return OrchestratorPlan(
+            intents=intents,
+            skills=skills,
+            requires_research=requires_research,
+            estimated_complexity=complexity,
+        )
+
+    async def execute(
+        self,
+        plan: OrchestratorPlan,
+        user_input: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Execute an orchestration plan.
+        """
+        context = context or {}
+        results = {}
+
+        # Group skills by dependency
+        no_deps = [s for s in plan.skills if not s.depends_on]
+        has_deps = [s for s in plan.skills if s.depends_on]
+
+        # Execute independent skills in parallel
+        if no_deps:
+            parallel_results = await asyncio.gather(*[
+                self._execute_skill(skill, user_input, context)
+                for skill in no_deps
+            ], return_exceptions=True)
+
+            for skill, result in zip(no_deps, parallel_results):
+                if isinstance(result, Exception):
+                    results[skill.skill_name] = {
+                        "success": False,
+                        "error": str(result),
+                    }
+                else:
+                    results[skill.skill_name] = result
+                    context[f"result_{skill.skill_name}"] = result
+
+        # Execute dependent skills sequentially
+        for skill in has_deps:
+            deps_met = all(
+                dep in results and results[dep].get("success", False)
+                for dep in skill.depends_on
+            )
+
+            if deps_met:
+                result = await self._execute_skill(skill, user_input, context)
+                results[skill.skill_name] = result
+                context[f"result_{skill.skill_name}"] = result
+            else:
+                results[skill.skill_name] = {
+                    "success": False,
+                    "error": "Dependencies not met",
+                    "missing_deps": [
+                        dep for dep in skill.depends_on
+                        if dep not in results or not results[dep].get("success")
+                    ],
+                }
+
+        return {
+            "plan": {
+                "intents": [
+                    {"type": i.intent.value, "confidence": i.confidence}
+                    for i in plan.intents
+                ],
+                "complexity": plan.estimated_complexity,
+            },
+            "results": results,
+            "success": all(
+                r.get("success", False) for r in results.values()
+            ),
+        }
+
+    async def _execute_skill(
+        self,
+        skill: SkillInvocation,
+        user_input: str,
+        context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Execute a single skill"""
+        skill_info = self._skills.get(skill.skill_name)
+
+        if not skill_info:
+            logger.warning(f"Skill not registered: {skill.skill_name}")
+            return {
+                "success": False,
+                "error": f"Skill '{skill.skill_name}' not found",
+            }
+
+        handler = skill_info["handler"]
+
+        try:
+            start = asyncio.get_event_loop().time()
+
+            if asyncio.iscoroutinefunction(handler):
+                result = await handler(
+                    user_input,
+                    context=context,
+                    **skill.parameters,
+                )
+            else:
+                result = handler(
+                    user_input,
+                    context=context,
+                    **skill.parameters,
+                )
+
+            return {
+                "success": True,
+                "output": result,
+                "execution_time": asyncio.get_event_loop().time() - start,
+            }
+
+        except Exception as e:
+            logger.error(f"Skill {skill.skill_name} failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def process(
+        self,
+        user_input: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Full processing pipeline: plan → execute → return results.
+        """
+        plan = await self.plan(user_input, context)
+
+        if not plan.skills:
+            return {
+                "plan": {"intents": [], "skills": []},
+                "results": {},
+                "success": True,
+                "message": "No skills triggered for this input",
+            }
+
+        return await self.execute(plan, user_input, context)
+
+
+# Convenience function
+async def auto_orchestrate(
+    user_input: str,
+    orchestrator: Optional[SkillOrchestrator] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Automatically orchestrate skill execution for user input.
+    """
+    if orchestrator is None:
+        orchestrator = SkillOrchestrator()
+
+    return await orchestrator.process(user_input, context)
