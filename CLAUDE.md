@@ -864,6 +864,252 @@ Weekly, review:
 
 ---
 
+---
+
+## ATLAS V2 BACKEND
+
+The v2 system (`atlas-v2/` in the repo) is the secure multi-tenant execution backend.
+When running as the full ATLAS system, v1 (this workspace) acts as the operator interface
+and v2 handles multi-client, sandboxed execution.
+
+### V2 System Location
+```
+/home/user/AIDE/atlas-v2/
+```
+
+### V2 Component Map
+```
+core/
+  providers/       AI backend abstraction (NVIDIA NIM → OpenRouter → Anthropic → Ollama)
+  approval/        Human-in-the-loop approval workflow (Telegram inline buttons)
+  ratelimit/       Token bucket + sliding window rate limiting
+  factcheck/       Hallucination detection and fact verification
+  agi/             Goal planner and proactive intelligence engine
+  security/        TrustGate (50+ patterns) + CommandGuard (allowlist)
+  bridge.py        V1/V2 bidirectional sync
+channels/          Multi-channel gateway (Telegram, Discord, Slack)
+memory/            Hybrid SQLite + vector embedding store
+tools/             Sandbox, browser automation, secure shell
+audit/             Distributed tracing, alert manager, audit log
+billing/           Usage tracking and invoice generation
+scheduler/         Cron scheduler with default ATLAS maintenance jobs
+security/          Malware scanner for skills
+skills/            Skill registry, executor, and loader
+```
+
+---
+
+## AI PROVIDER CHAIN
+
+Requests flow through providers in order until one succeeds:
+
+```
+1. NVIDIA NIM (kimi-k2.5)  → FREE tier, first attempt
+2. OpenRouter (kimi-k2.5)  → $0.60/$3.00 per M tokens, fallback
+3. Anthropic (claude-opus-4.5) → $5/$25 per M, for complex reasoning
+4. Ollama (local)          → FREE, offline fallback
+```
+
+Configuration in `~/.atlas/memory/identity.yaml`:
+```yaml
+ai_backends:
+  chain:
+    - provider: nvidia_nim
+      model: kimi-k2.5
+      key_env: NVIDIA_API_KEY
+    - provider: openrouter
+      model: kimi-k2.5
+      key_env: OPENROUTER_API_KEY
+    - provider: anthropic
+      model: claude-opus-4.5
+      key_env: ANTHROPIC_API_KEY
+      use_when: complex_reasoning
+    - provider: ollama
+      model: llama3.2
+      base_url: http://localhost:11434
+  embeddings:
+    provider: local
+    model: all-MiniLM-L6-v2
+```
+
+---
+
+## FACT-CHECKING PIPELINE
+
+**Every AI-generated output and scraped content is fact-checked before use.**
+
+The fact-checker sits between Auditor and Executor in the security pipeline:
+
+```
+AI Output → FactChecker → Verified Response
+                ├── HallucinationDetector (25+ markers)
+                ├── ConsistencyChecker (vs memory + context)
+                ├── CodeVerifier (AST + safety patterns)
+                └── ConfidenceScorer (0.0 - 1.0)
+```
+
+**What it blocks**:
+- Fabricated citations ("study by X found...")
+- False certainty claims ("I can confirm that...")
+- False memory references ("you told me earlier...")
+- Code with security issues (eval, shell=True, etc.)
+- Internal contradictions within the same response
+
+**Risk Levels**: low → medium → high → critical
+
+**Threshold**: 0.65 confidence minimum (configurable)
+
+If a response fails fact-checking:
+- Add uncertainty disclaimer
+- Log to audit trail
+- Optionally escalate to operator
+
+---
+
+## MALWARE SCANNER
+
+**All skills are scanned before registration or execution.**
+
+```
+Skill/Code → StaticAnalyzer → PatternMatcher → ASTAnalyzer → Verdict
+                                      ├── CLEAN ✅
+                                      ├── SUSPICIOUS ⚠️ (logged)
+                                      ├── DANGEROUS 🚨 (blocked)
+                                      └── MALICIOUS ☠️ (blocked + alert)
+```
+
+**Detects**:
+- Data exfiltration (socket connections, HTTP POST)
+- Privilege escalation (sudo, setuid, /etc access)
+- Persistence mechanisms (cron installs, service registration)
+- Reverse shells (nc -e, bash /dev/tcp)
+- Supply chain attacks (known-bad PyPI packages)
+- Code injection (eval, exec, shell=True)
+- File destruction (rm -rf, shutil.rmtree)
+- Crypto-mining patterns
+
+**Supply chain**: Cross-references against known-malicious PyPI package list.
+
+---
+
+## PROACTIVE ENGINE (AGI Mode)
+
+The proactive engine runs continuously in the background.
+This is what makes ATLAS feel like an AGI rather than a chatbot.
+
+**Active checks**:
+| Check | Interval | What it watches |
+|-------|----------|-----------------|
+| DailyBriefing | 30min (triggers 1x/day at work start) | Morning briefing with objectives |
+| MemoryConsolidation | 4 hours | Memory capacity, deduplication |
+| AnomalyDetection | 10 min | Token usage spikes, billing anomalies |
+| LearningInsights | 6 hours | Recurring failures, skill opportunities |
+| SystemHealth | 5 min | CPU, RAM, channel connectivity |
+
+**Proactive actions taken without being asked**:
+- Send morning briefing at work start
+- Alert on security anomalies
+- Suggest skill creation for repeated tasks
+- Flag unusual billing spikes
+- Memory cleanup when approaching capacity
+
+---
+
+## GOAL PLANNER
+
+For complex tasks, ATLAS uses autonomous goal decomposition:
+
+```
+Goal → Decomposer → DependencyGraph → ExecutionScheduler
+                                             ↓
+                                    (parallel where safe)
+                                             ↓
+                                    SelfMonitor + OutcomeLearner
+```
+
+**Known goal patterns** (auto-decomposed):
+- `research` → search → summarize → fact-check → store
+- `code_review` → read → malware_scan → analyze → report → fact-check
+- `write_skill` → design → implement → scan → test → register (approval required)
+- `generate_report` → gather → draft → fact-check → format → store
+
+**Learns from outcomes**: Each completed goal updates the planning model
+with what tools worked, what failed, timing data.
+
+---
+
+## SCHEDULED TASKS
+
+Default cron jobs (registered automatically):
+
+| Job | Schedule | What it does |
+|-----|----------|--------------|
+| `health-check` | `*/5 * * * *` | Verify all systems operational |
+| `memory-consolidation` | `0 3 * * *` | Archive old memories, deduplicate |
+| `weekly-billing-summary` | `0 18 * * 0` | Sunday 6pm billing report |
+| `audit-log-rotation` | `0 0 1 * *` | Monthly log rotation |
+
+**Adding custom jobs**:
+```python
+scheduler.add_job(
+    "my-job",
+    "0 9 * * 1-5",   # 9am weekdays
+    my_async_function,
+    description="What this does"
+)
+```
+
+---
+
+## MULTI-CHANNEL SUPPORT
+
+ATLAS can receive commands from multiple platforms simultaneously.
+All channels normalize to the same message format before processing.
+
+**Supported channels**:
+- ✅ Telegram (primary)
+- 🔧 Discord (adapter ready, needs bot token)
+- 🔧 Slack (adapter ready, needs bot token)
+
+**Adding a channel** - update `~/.atlas/memory/identity.yaml`:
+```yaml
+channels:
+  telegram:
+    enabled: true
+    bot_token_env: TELEGRAM_BOT_TOKEN
+  discord:
+    enabled: false
+    bot_token_env: DISCORD_BOT_TOKEN
+```
+
+---
+
+## UPDATED QUICK COMMANDS
+
+| Command | Action |
+|---------|--------|
+| `status` | Full system status including v2 health |
+| `what's next` | Show highest priority task and start it |
+| `clock in [client] [task]` | Start billing session |
+| `clock out` | End current billing session |
+| `add task [desc] for [client]` | Add to queue |
+| `show queue` | Display pending tasks |
+| `morning briefing` | Full context reload and day planning |
+| `end of day` | Run daily consolidation |
+| `create skill [name]` | Start skill creation workflow (with malware scan) |
+| `show learnings` | Display learnings.md |
+| `security check` | Audit recent logs for anomalies |
+| `fact check [text]` | Manually fact-check a piece of content |
+| `scan skill [name]` | Manually trigger malware scan |
+| `goals` | Show active goal plans |
+| `insights` | Show AGI planning insights from learner |
+| `proactive status` | Show recent proactive engine actions |
+| `channel status` | Show connected channels health |
+| `billing summary` | Current billing status |
+| `provider status` | Show AI provider chain health |
+
+---
+
 ## INITIALIZATION COMPLETE
 
 When you finish reading this file:
@@ -874,5 +1120,6 @@ When you finish reading this file:
 4. **Await instructions or process queue**
 
 You are autonomous. You have agency. You solve problems. You ship work.
+Facts are verified. Code is scanned. Goals are planned. The system is watching.
 
 **Begin.**
