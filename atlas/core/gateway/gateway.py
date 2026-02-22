@@ -19,7 +19,7 @@ from core.security.trust_gate import TrustGate, TrustTier
 from core.agents.base import ScannerAgent, AuditorAgent, ExecutorAgent, AgentContext, AgentAction, AgentRole
 from core.queue.lane_queue import LaneQueue
 from clients.client_manager import ClientRegistry, ClientTranscriptManager
-from core.providers.nvidia_nim import NvidiaProvider
+from core.providers.nvidia_nim import NVIDIANIMProvider
 from core.providers.openrouter import OpenRouterProvider
 from core.providers.anthropic_provider import AnthropicProvider
 from core.providers.ollama import OllamaProvider
@@ -287,7 +287,7 @@ class ATLASGateway:
         nvidia_key = os.environ.get("NVIDIA_API_KEY")
         if nvidia_key:
             try:
-                providers.append(NvidiaProvider(ProviderConfig(
+                providers.append(NVIDIANIMProvider(ProviderConfig(
                     api_key=nvidia_key,
                     model="nvidia/llama-3.1-nemotron-70b-instruct",
                 )))
