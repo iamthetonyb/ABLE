@@ -1,0 +1,317 @@
+# ATLAS Skill Registry
+# This file is auto-discovered by skills/loader.py
+# Skills are loaded from skills/library/[name]/ directories
+
+version: "1.0"
+last_updated: "2026-02-21"
+
+skills:
+
+  # ══════════════════════════════════════════════════════════════
+  # COMMUNICATION SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  copywriting:
+    description: "NLP-targeted direct-response copywriting with psychological profiling"
+    triggers:
+      - "respond"
+      - "reply"
+      - "email"
+      - "write"
+      - "draft"
+      - "message"
+      - "copy"
+      - "pitch"
+      - "follow up"
+      - "reach out"
+    context_boosters:
+      - "prospect"
+      - "client"
+      - "customer"
+      - "lead"
+      - "convert"
+      - "sell"
+    type: "behavioral"
+    trust_level: "L1_OBSERVE"
+    requires_approval: false
+    created: "2026-02-21"
+    last_used: null
+    use_count: 0
+
+  status-report:
+    description: "Generate comprehensive status reports"
+    triggers:
+      - "status"
+      - "status report"
+      - "what's happening"
+    type: "behavioral"
+    trust_level: "L1_OBSERVE"
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  daily-briefing:
+    description: "Morning briefing with priorities and schedule"
+    triggers:
+      - "morning briefing"
+      - "daily briefing"
+      - "what's on today"
+    type: "behavioral"
+    trust_level: "L1_OBSERVE"
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  # ══════════════════════════════════════════════════════════════
+  # TOOL INTEGRATIONS
+  # ══════════════════════════════════════════════════════════════
+
+  notion:
+    description: "Notion workspace integration - pages, databases, blocks"
+    triggers:
+      - "notion"
+      - "create page"
+      - "save to notion"
+      - "add to notion"
+      - "search notion"
+      - "update notion"
+      - "notion database"
+      - "log this"
+    type: "tool"
+    trust_level: "L2_SUGGEST"
+    requires_approval: true
+    created: "2026-02-21"
+    last_used: null
+    use_count: 0
+    dependencies:
+      - "aiohttp"
+    env_required:
+      - "NOTION_API_KEY"
+
+  # ══════════════════════════════════════════════════════════════
+  # RESEARCH SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  web-research:
+    description: "Search the web and synthesize findings into a report"
+    triggers:
+      - "research"
+      - "find out about"
+      - "look up"
+      - "look into"
+      - "investigate"
+    type: "tool"
+    trust_level: "L1_OBSERVE"
+    tools_used: [web_search, web_fetch, read, write]
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  document-analysis:
+    description: "Analyze documents for key information, summarize, extract data"
+    triggers:
+      - "analyze"
+      - "summarize"
+      - "extract from"
+    type: "behavioral"
+    trust_level: "L1_OBSERVE"
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  # ══════════════════════════════════════════════════════════════
+  # DEVELOPMENT SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  code-review:
+    description: "Review code for bugs, security issues, and improvements"
+    triggers:
+      - "review"
+      - "check code"
+      - "code review"
+    type: "hybrid"
+    trust_level: "L2_SUGGEST"
+    tools_used: [read, bash]
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  git-workflow:
+    description: "Manage git operations: status, diff, commit, push"
+    triggers:
+      - "git status"
+      - "commit changes"
+      - "push to"
+    type: "tool"
+    trust_level: "L3_ACT"
+    tools_used: [bash]
+    requires_approval: true
+    created: "2026-02-03"
+    use_count: 0
+
+  # ══════════════════════════════════════════════════════════════
+  # BILLING SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  invoice-generator:
+    description: "Generate client invoices from billing sessions"
+    triggers:
+      - "generate invoice"
+      - "invoice"
+      - "bill client"
+    type: "tool"
+    trust_level: "L3_ACT"
+    tools_used: [read, write, bash]
+    requires_approval: true
+    created: "2026-02-03"
+    use_count: 0
+
+  billing-report:
+    description: "Generate billing summary reports"
+    triggers:
+      - "billing report"
+      - "show billing"
+      - "billing summary"
+    type: "behavioral"
+    trust_level: "L2_SUGGEST"
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  # ══════════════════════════════════════════════════════════════
+  # SECURITY SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  security-audit:
+    description: "Audit logs for security anomalies and threats"
+    triggers:
+      - "security check"
+      - "audit security"
+      - "check for threats"
+      - "security audit"
+    type: "tool"
+    trust_level: "L2_SUGGEST"
+    tools_used: [read, bash]
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  content-scan:
+    description: "Scan content for injection attempts or threats"
+    triggers:
+      - "scan"
+      - "check for injection"
+      - "security scan"
+    type: "tool"
+    trust_level: "L1_OBSERVE"
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  # ══════════════════════════════════════════════════════════════
+  # MEMORY SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  daily-consolidation:
+    description: "End of day consolidation: summarize, archive, update learnings"
+    triggers:
+      - "end of day"
+      - "consolidate"
+      - "wrap up day"
+    type: "tool"
+    trust_level: "L2_SUGGEST"
+    tools_used: [read, write]
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  weekly-review:
+    description: "Weekly review: accomplishments, learnings, planning"
+    triggers:
+      - "weekly review"
+      - "week summary"
+    type: "behavioral"
+    trust_level: "L2_SUGGEST"
+    requires_approval: false
+    created: "2026-02-03"
+    use_count: 0
+
+  # ══════════════════════════════════════════════════════════════
+  # SYSTEM SKILLS (Meta-capabilities)
+  # ══════════════════════════════════════════════════════════════
+
+  skill-creator:
+    description: "Create new ATLAS skills using the 6-step process: understand, plan, init (init_skill.py), edit, package (package_skill.py), iterate. Use when operator wants to add a new capability or when a task has recurred 3+ times."
+    triggers:
+      - "create skill"
+      - "new skill"
+      - "build skill"
+      - "add capability"
+      - "make skill"
+      - "package skill"
+    type: "hybrid"
+    trust_level: "L3_ACT"
+    tools_used: [bash, read, write]
+    requires_approval: true
+    scripts:
+      init: "atlas/skills/scripts/init_skill.py"
+      package: "atlas/skills/scripts/package_skill.py"
+    reference:
+      openclaw: "https://github.com/openclaw/openclaw/tree/main/skills/skill-creator"
+      registry: "https://skills.sh"
+    created: "2026-02-22"
+    use_count: 0
+
+  skills-sh-discovery:
+    description: "Search and install skills from skills.sh open registry. Auto-runs weekly. Search: 'npx skills search <topic>'. Install: 'npx skills add <owner/repo>'. Use when planning a new task to check if a relevant skill already exists."
+    triggers:
+      - "skills search"
+      - "find skill"
+      - "install skill from"
+      - "check skills.sh"
+      - "what skills exist for"
+      - "npx skills"
+    type: "tool"
+    trust_level: "L2_SUGGEST"
+    tools_used: [bash]
+    requires_approval: false
+    auto_schedule: "0 9 * * 1"
+    implementation: "atlas/tools/skills_sh/client.py"
+    created: "2026-02-22"
+    use_count: 0
+
+# ══════════════════════════════════════════════════════════════
+# SKILL TYPES
+# ══════════════════════════════════════════════════════════════
+#
+# - "behavioral": Protocol-driven, SKILL.md is primary (injected into LLM context)
+# - "tool": Action-driven, implement.py is primary (executed as code)
+# - "hybrid": Both protocol and execution are significant
+#
+# TRUST LEVELS
+# ══════════════════════════════════════════════════════════════
+#
+# - L1_OBSERVE: Read-only, no side effects
+# - L2_SUGGEST: Can propose actions, needs confirmation
+# - L3_ACT: Can execute with logging
+# - L4_AUTONOMOUS: Full autonomy
+#
+# ADDING NEW SKILLS
+# ══════════════════════════════════════════════════════════════
+#
+# Option A: Create from scratch
+#   python atlas/skills/scripts/init_skill.py <name> --path atlas/skills/library
+#   Edit SKILL.md, implement resources
+#   python atlas/skills/scripts/package_skill.py atlas/skills/library/<name>
+#   Add entry to this file
+#
+# Option B: Install from skills.sh
+#   npx skills add <owner/repo>
+#   Add entry to this file
+#
+# Key principles (from OpenClaw skill-creator):
+#   - Context window is a public good: keep SKILL.md lean (<500 lines)
+#   - Progressive disclosure: metadata (100w) → SKILL.md body → references as needed
+#   - Move detailed docs, schemas, examples → references/ files
+#   - Scripts are token-efficient: execute without loading into context
+#   - Only add what another ATLAS instance wouldn't already know

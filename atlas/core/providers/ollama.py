@@ -29,6 +29,118 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 
+class ThinkingMode:
+    """Qwen 3.5 thinking mode configuration"""
+    OFF = "off"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    ULTRA = "ultra"
+
+
+class QwenConfig:
+    """
+    Qwen 3.5 optimized configuration.
+
+    Covers:
+    - Thinking modes (off / low / medium / high / ultra)
+    - YaRN context extension (128K → 1M tokens)
+    - MoE routing (235B total, 22B active)
+    - Optimal sampling parameters per mode
+    """
+
+    # Sampling parameters for thinking vs non-thinking
+    THINKING_PARAMS = {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+    }
+
+    NON_THINKING_PARAMS = {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "presence_penalty": 1.5,
+    }
+
+    # Thinking budget tokens per mode
+    THINKING_BUDGETS = {
+        ThinkingMode.OFF: 0,
+        ThinkingMode.LOW: 8_192,
+        ThinkingMode.MEDIUM: 16_384,
+        ThinkingMode.HIGH: 32_768,
+        ThinkingMode.ULTRA: 81_920,
+    }
+
+    # YaRN context window configurations
+    CONTEXT_CONFIGS = {
+        "default": {"num_ctx": 32_768},
+        "extended": {"num_ctx": 131_072, "rope_scaling_type": "yarn", "rope_scaling_factor": 2.0},
+        "long": {"num_ctx": 262_144, "rope_scaling_type": "yarn", "rope_scaling_factor": 4.0},
+        "max": {"num_ctx": 1_048_576, "rope_scaling_type": "yarn", "rope_scaling_factor": 4.0},
+    }
+
+    @classmethod
+    def get_options(
+        cls,
+        thinking_mode: str = ThinkingMode.OFF,
+        context_size: str = "default",
+        extra_options: dict = None,
+    ) -> dict:
+        """
+        Build Ollama options dict for Qwen 3.5.
+
+        Args:
+            thinking_mode: ThinkingMode constant or "off"/"low"/"medium"/"high"/"ultra"
+            context_size: "default" (32K) / "extended" (128K) / "long" (262K) / "max" (1M)
+            extra_options: Additional options to merge
+
+        Returns:
+            Options dict suitable for Ollama API payload["options"]
+        """
+        if thinking_mode == ThinkingMode.OFF:
+            params = cls.NON_THINKING_PARAMS.copy()
+        else:
+            params = cls.THINKING_PARAMS.copy()
+            budget = cls.THINKING_BUDGETS.get(thinking_mode, 0)
+            if budget:
+                params["num_predict"] = budget
+
+        ctx = cls.CONTEXT_CONFIGS.get(context_size, cls.CONTEXT_CONFIGS["default"])
+        params.update(ctx)
+
+        if extra_options:
+            params.update(extra_options)
+
+        return params
+
+    @classmethod
+    def auto_thinking_mode(cls, complexity_score: float) -> str:
+        """Auto-select thinking mode based on task complexity (0.0–1.0)"""
+        if complexity_score < 0.3:
+            return ThinkingMode.OFF
+        elif complexity_score < 0.5:
+            return ThinkingMode.LOW
+        elif complexity_score < 0.7:
+            return ThinkingMode.MEDIUM
+        elif complexity_score < 0.9:
+            return ThinkingMode.HIGH
+        else:
+            return ThinkingMode.ULTRA
+
+    @classmethod
+    def thinking_system_prefix(cls, mode: str) -> str:
+        """
+        Prefix to add to system prompt to enable thinking mode in Qwen.
+        Qwen 3.5 uses /think and /no_think directives.
+        """
+        if mode == ThinkingMode.OFF:
+            return "/no_think\n"
+        else:
+            return "/think\n"
+
+
 class OllamaProvider(LLMProvider):
     """
     Ollama Provider for local and hosted LLM inference.
@@ -128,6 +240,10 @@ class OllamaProvider(LLMProvider):
             })
         return converted
 
+    def _is_qwen_model(self) -> bool:
+        """Check if the current model is a Qwen variant"""
+        return "qwen" in self.config.model.lower()
+
     async def complete(
         self,
         messages: List[Message],
@@ -135,18 +251,43 @@ class OllamaProvider(LLMProvider):
         max_tokens: int = 4096,
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
+        thinking_mode: str = ThinkingMode.OFF,
+        context_size: str = "default",
+        complexity_score: float = 0.0,
         **kwargs
     ) -> CompletionResult:
         session = await self._get_session()
+
+        # Auto-select thinking mode for Qwen based on complexity
+        if self._is_qwen_model() and complexity_score > 0 and thinking_mode == ThinkingMode.OFF:
+            thinking_mode = QwenConfig.auto_thinking_mode(complexity_score)
+
+        # Build options — use QwenConfig for Qwen models
+        if self._is_qwen_model():
+            options = QwenConfig.get_options(
+                thinking_mode=thinking_mode,
+                context_size=context_size,
+                extra_options={"num_predict": max_tokens},
+            )
+            # Apply thinking prefix to system message if needed
+            prefix = QwenConfig.thinking_system_prefix(thinking_mode)
+            if prefix and messages and messages[0].role == Role.SYSTEM:
+                messages = list(messages)
+                messages[0] = Message(
+                    role=messages[0].role,
+                    content=prefix + messages[0].content,
+                )
+        else:
+            options = {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            }
 
         payload = {
             "model": self.config.model,
             "messages": self._convert_messages(messages),
             "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            }
+            "options": options,
         }
 
         # Ollama tool support is model-dependent

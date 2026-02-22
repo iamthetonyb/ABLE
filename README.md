@@ -6,20 +6,20 @@ An executive-level AI agent operating via Telegram with a secure multi-agent pip
 
 ## Quick Start
 
-### Option A — Docker (Recommended for production / Digital Ocean)
+### Option A — Docker (Recommended for production)
 
 ```bash
-cd atlas-v2
+cd atlas
 cp .env.example .env
 # Edit .env with your credentials (see Configuration below)
 docker-compose up -d
-docker logs -f atlas-v2
+docker logs -f atlas
 ```
 
 ### Option B — Local Python
 
 ```bash
-cd atlas-v2
+cd atlas
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
@@ -31,7 +31,7 @@ python start.py
 
 ## Configuration
 
-Edit `atlas-v2/.env` with these required values:
+Edit `atlas/.env` with these required values:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
@@ -48,27 +48,30 @@ ANTHROPIC_API_KEY=your_claude_key       # Optional (premium reasoning)
 ## Architecture
 
 ```
-ATLAS/
-├── atlas-v2/          ← Main application (V2 — use this)
-│   ├── start.py       ← Entry point
-│   ├── core/          ← Agent pipeline, security, AGI engine
-│   ├── channels/      ← Telegram, Discord, Slack adapters
-│   ├── memory/        ← Hybrid SQLite + vector memory
-│   ├── skills/        ← Skill library and executor
-│   ├── tools/         ← Browser, shell, search, MCP bridge
-│   ├── billing/       ← Usage tracking and invoices
-│   ├── security/      ← AES-256 encryption, malware scanner
-│   └── audit/         ← Audit logs, alerts, traces
+AIDE/
+├── atlas/              ← Main application
+│   ├── start.py        ← Entry point
+│   ├── core/           ← Agent pipeline, security, swarm orchestrator
+│   ├── channels/       ← Telegram, Discord, Slack adapters
+│   ├── memory/         ← Hybrid SQLite + vector + markdown memory
+│   ├── skills/         ← Skill library, loader, and executor
+│   │   └── scripts/    ← init_skill.py, package_skill.py
+│   ├── tools/          ← Browser, shell, search, webhooks, MCP bridge
+│   ├── billing/        ← Usage tracking and invoices
+│   ├── scheduler/      ← Cron-based scheduled tasks
+│   ├── security/       ← AES-256 encryption, malware scanner, secret isolation
+│   └── audit/          ← Audit logs, alerts, traces, git trail
 │
-├── atlas_system/      ← System-level docs and setup helpers
-│   ├── CUSTOMIZATION.md  ← Full setup and personalization guide
-│   ├── AGENTS.md         ← Multi-agent orchestration reference
-│   ├── SECURITY.md       ← Threat patterns and response
-│   └── skills/           ← Skill templates
+├── docs/               ← Documentation
+│   ├── CUSTOMIZATION.md
+│   ├── SECURITY.md
+│   └── TOOLS.md
 │
-├── SOUL.md            ← Core identity and behavioral directives
-├── CLAUDE.md          ← Full operator configuration (Claude Code)
-└── atlas_gateway.py   ← Legacy V1 gateway (reference only)
+├── scripts/            ← Setup scripts
+│   └── atlas-setup.sh
+│
+├── ATLAS.md            ← Full system configuration (1400+ lines)
+└── SOUL.md             ← Core identity and behavioral directives
 ```
 
 ### Message Pipeline
@@ -80,30 +83,37 @@ Telegram → UnifiedGateway → Scanner → Auditor → TrustGate → Executor �
 ### AI Provider Chain
 
 ```
-1. NVIDIA NIM (kimi-k2.5)    → Free tier
-2. OpenRouter (kimi-k2.5)    → Fallback
-3. Anthropic (claude-sonnet) → Complex reasoning
-4. Ollama (local)            → Offline fallback
+1. NVIDIA NIM (kimi-k2.5 / Qwen3.5)  → Free tier
+2. OpenRouter (kimi-k2.5)            → Fallback ($0.60/$3.00 per M)
+3. Anthropic (claude-opus-4-5)       → Complex reasoning ($5/$25 per M)
+4. Ollama (qwen3.5 / llama)          → Offline fallback (free)
 ```
+
+### Agent Swarm
+
+Complex tasks (complexity score ≥ 0.6) auto-spawn agent swarms:
+- RESEARCHER, ANALYST, WRITER, CODER, REVIEWER, CRITIC, PLANNER, EXECUTOR, COORDINATOR
 
 ---
 
 ## Server Deployment (Digital Ocean)
 
-From your local machine (after SSH key is set up):
+From your local machine:
 
 ```bash
 bash deploy-to-server.sh
 ```
 
+Or GitHub Actions auto-deploys on push to main.
+
 Manual steps:
 ```bash
 ssh root@YOUR_SERVER_IP
-git clone https://github.com/iamthetonyb/AIDE.git /opt/atlas
-cd /opt/atlas/AIDE/atlas-v2
+git clone https://github.com/iamthetonyb/AIDE.git /opt/atlas/AIDE
+cd /opt/atlas/AIDE/atlas
 cp .env.example .env && nano .env
 docker-compose up -d
-docker logs -f atlas-v2
+docker logs -f atlas
 ```
 
 ---
@@ -120,8 +130,38 @@ Once running, verify:
 
 | File | Purpose |
 |------|---------|
-| `SOUL.md` | Behavioral identity (read every session) |
-| `CLAUDE.md` | Full system configuration for Claude Code |
-| `atlas_system/CUSTOMIZATION.md` | Personalization and setup guide |
-| `atlas-v2/config/gateway.json` | Non-secret runtime settings |
-| `atlas-v2/.env` | Secrets (never commit) |
+| `ATLAS.md` | Full system configuration — read every session |
+| `SOUL.md` | Core identity and behavioral directives |
+| `docs/CUSTOMIZATION.md` | Personalization guide |
+| `atlas/config/gateway.json` | Non-secret runtime settings |
+| `atlas/.env` | Secrets (never commit) |
+
+---
+
+## Skill System
+
+Create new skills:
+```bash
+python atlas/skills/scripts/init_skill.py my-skill --path atlas/skills/library --resources scripts,references
+```
+
+Package skills:
+```bash
+python atlas/skills/scripts/package_skill.py atlas/skills/library/my-skill
+```
+
+Install from skills.sh registry:
+```bash
+npx skills add <owner/repo>
+```
+
+---
+
+## Qwen 3.5 Optimizations
+
+When using Qwen 3.5 via Ollama:
+- **YaRN context extension**: 32K → 262K → 1M tokens
+- **Thinking modes**: off / low / medium / high / ultra
+- **MoE routing**: 235B total params, 22B active per forward pass
+
+See `atlas/core/providers/ollama.py` for `QwenConfig`.
