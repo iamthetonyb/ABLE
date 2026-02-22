@@ -48,6 +48,88 @@ class SkillInvocation:
 
 
 @dataclass
+class ComplexityScore:
+    """Complexity scoring for swarm dispatch decision"""
+    score: float          # 0.0–1.0
+    factors: Dict[str, float]
+    use_swarm: bool       # True if score >= SWARM_THRESHOLD
+    recommended_roles: List[str] = field(default_factory=list)
+
+    SWARM_THRESHOLD: float = 0.6
+
+    @classmethod
+    def calculate(cls, intents: List["IntentMatch"], user_input: str) -> "ComplexityScore":
+        """
+        Score task complexity to decide direct execution vs swarm dispatch.
+
+        Factors:
+        - intent_count: Number of distinct intents detected
+        - multi_domain: Spans multiple domains (code + research + writing)
+        - length: Long request = more likely complex
+        - has_dependencies: Task mentions sequential steps
+        - high_stakes: Legal, financial, security topics
+        """
+        factors = {}
+
+        # Factor 1: Multiple intents
+        intent_count = len([i for i in intents if i.confidence >= 0.5])
+        factors["intent_count"] = min(1.0, intent_count * 0.25)
+
+        # Factor 2: Multi-domain indicators
+        domain_keywords = {
+            "code": ["code", "implement", "debug", "build", "function"],
+            "research": ["research", "find", "look up", "investigate"],
+            "write": ["write", "draft", "email", "blog", "copy"],
+            "plan": ["plan", "strategy", "roadmap", "design"],
+            "analyze": ["analyze", "review", "compare", "audit"],
+        }
+        text_lower = user_input.lower()
+        domains_hit = sum(
+            1 for kws in domain_keywords.values()
+            if any(kw in text_lower for kw in kws)
+        )
+        factors["multi_domain"] = min(1.0, domains_hit * 0.2)
+
+        # Factor 3: Request length
+        word_count = len(user_input.split())
+        factors["length"] = min(1.0, word_count / 100)
+
+        # Factor 4: Sequential steps mentioned
+        step_indicators = ["then", "after that", "next", "finally", "step", "first", "second"]
+        has_steps = any(ind in text_lower for ind in step_indicators)
+        factors["has_dependencies"] = 0.3 if has_steps else 0.0
+
+        # Factor 5: High-stakes domain
+        high_stakes = ["legal", "financial", "security", "production", "deploy", "customer data"]
+        is_high_stakes = any(hs in text_lower for hs in high_stakes)
+        factors["high_stakes"] = 0.2 if is_high_stakes else 0.0
+
+        score = min(1.0, sum(factors.values()))
+        use_swarm = score >= cls.SWARM_THRESHOLD
+
+        # Recommend agent roles based on intents
+        role_map = {
+            IntentType.RESEARCH: ["RESEARCHER", "ANALYST"],
+            IntentType.WRITING: ["WRITER", "REVIEWER"],
+            IntentType.CODING: ["CODER", "REVIEWER"],
+            IntentType.PLANNING: ["PLANNER", "CRITIC"],
+            IntentType.ANALYSIS: ["ANALYST", "REVIEWER"],
+            IntentType.COMMUNICATION: ["WRITER"],
+        }
+        roles = set(["COORDINATOR"])
+        for intent in intents:
+            if intent.confidence >= 0.5 and intent.intent in role_map:
+                roles.update(role_map[intent.intent])
+
+        return cls(
+            score=round(score, 2),
+            factors=factors,
+            use_swarm=use_swarm,
+            recommended_roles=list(roles),
+        )
+
+
+@dataclass
 class OrchestratorPlan:
     """Execution plan for a user request"""
     intents: List[IntentMatch]
@@ -55,6 +137,7 @@ class OrchestratorPlan:
     requires_research: bool = False
     requires_approval: bool = False
     estimated_complexity: str = "simple"  # simple, moderate, complex
+    complexity_score: Optional[ComplexityScore] = None
 
 
 class IntentDetector:
@@ -321,12 +404,21 @@ class SkillOrchestrator:
         # Sort by priority
         skills.sort(key=lambda s: s.priority, reverse=True)
 
-        # Determine complexity
+        # Calculate complexity score for swarm decision
+        complexity_score = ComplexityScore.calculate(intents, user_input)
+
+        # Determine complexity label
         complexity = "simple"
-        if len(skills) > 2:
-            complexity = "moderate"
-        if len(intents) > 2 or any(s.depends_on for s in skills):
+        if complexity_score.score >= 0.6:
             complexity = "complex"
+        elif len(skills) > 2 or complexity_score.score >= 0.35:
+            complexity = "moderate"
+
+        if complexity_score.use_swarm:
+            logger.info(
+                f"Complexity score {complexity_score.score:.2f} >= 0.6 → "
+                f"Swarm dispatch recommended. Roles: {complexity_score.recommended_roles}"
+            )
 
         # Check if research needed
         requires_research = any(
@@ -338,6 +430,7 @@ class SkillOrchestrator:
             skills=skills,
             requires_research=requires_research,
             estimated_complexity=complexity,
+            complexity_score=complexity_score,
         )
 
     async def execute(
@@ -394,6 +487,15 @@ class SkillOrchestrator:
                     ],
                 }
 
+        swarm_info = {}
+        if plan.complexity_score and plan.complexity_score.use_swarm:
+            swarm_info = {
+                "swarm_recommended": True,
+                "complexity_score": plan.complexity_score.score,
+                "recommended_roles": plan.complexity_score.recommended_roles,
+                "note": "Use /mesh <goal> to spawn agent swarm for this task",
+            }
+
         return {
             "plan": {
                 "intents": [
@@ -401,6 +503,7 @@ class SkillOrchestrator:
                     for i in plan.intents
                 ],
                 "complexity": plan.estimated_complexity,
+                **swarm_info,
             },
             "results": results,
             "success": all(
