@@ -7,8 +7,9 @@ import asyncio
 import json
 import logging
 import os
+import base64
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from pathlib import Path
 
 from aiohttp import web
@@ -257,11 +258,12 @@ class ATLASGateway:
         self.client_registry = ClientRegistry()
         self.transcript_manager = ClientTranscriptManager()
 
+        # Setup core
+        self.provider_chain = self._init_providers()
+        self.vision_chain = self._init_vision_providers()
+
         # Initialize agents
         self._init_agents()
-
-        # Initialize AI provider chain
-        self.provider_chain = self._init_providers()
 
         # Initialize approval workflow
         self.approval_workflow = ApprovalWorkflow(
@@ -327,10 +329,10 @@ class ATLASGateway:
 
         ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         try:
-            providers.append(OllamaProvider(
+            providers.append(OllamaProvider(ProviderConfig(
+                model="llama3.1",
                 base_url=ollama_url,
-                model="qwen3.5:397b-cloud",
-            ))
+            )))
             logger.info("Provider added: Ollama (local fallback)")
         except Exception as e:
             logger.warning(f"Failed to init Ollama provider: {e}")
@@ -338,6 +340,25 @@ class ATLASGateway:
         if not providers:
             logger.error("No AI providers configured — ATLAS will not respond to messages!")
 
+        return ProviderChain(providers)
+
+    def _init_vision_providers(self) -> ProviderChain:
+        """Build ProviderChain specifically for multimodal inputs."""
+        providers = []
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        if nvidia_key:
+            try:
+                # Primary Vision Provider: Llama 3.2 90B Vision (Massive VLM on NIM)
+                providers.append(NVIDIANIMProvider(
+                    api_key=nvidia_key,
+                    model="meta/llama-3.2-90b-vision-instruct",
+                    timeout=120.0
+                ))
+                logger.info("Provider added: NVIDIA NIM Vision (Llama 3.2 90B Vision)")
+            except Exception as e:
+                logger.warning(f"Failed to init NVIDIA vision provider: {e}")
+                
+        # Create chain
         return ProviderChain(providers)
 
     def _init_agents(self):
@@ -362,7 +383,7 @@ class ATLASGateway:
 
     async def process_message(
         self,
-        message: str,
+        message: Union[str, list],
         user_id: str,
         client_id: Optional[str] = None,
         metadata: Dict = None,
@@ -373,8 +394,13 @@ class ATLASGateway:
         Input → Scanner → Auditor → Trust Gate → AI (ProviderChain) → Tool dispatch
         """
 
+        # Extract textual content from multimodal list for security scanning
+        text_content = message
+        if isinstance(message, list):
+            text_content = next((item.get("text", "") for item in message if item.get("type") == "text"), "")
+
         # Step 1: Scanner (read-only analysis)
-        scan_result = await self.scanner.process(message, metadata or {})
+        scan_result = await self.scanner.process(text_content, metadata or {})
 
         if not scan_result["security_verdict"]["passed"]:
             return f"⚠️ Security check failed: {scan_result['blocked_reason']}"
@@ -393,17 +419,26 @@ class ATLASGateway:
             msgs = [Message(role=Role.SYSTEM, content=ATLAS_SYSTEM_PROMPT)]
             msgs.append(Message(role=Role.USER, content=message))
 
-            result = await self.provider_chain.complete(
-                msgs,
-                tools=ATLAS_TOOL_DEFS,
-                max_tokens=16384,
-                temperature=0.60,
-                top_p=0.95,
-                top_k=20,
-                presence_penalty=0,
-                repetition_penalty=1,
-                chat_template_kwargs={"enable_thinking": True}
-            )
+            # Route to a vision-capable provider if message is multimodal
+            if isinstance(message, list):
+                result = await self.vision_chain.complete(
+                    msgs,
+                    tools=ATLAS_TOOL_DEFS,
+                    max_tokens=4096,
+                    temperature=0.60
+                )
+            else:
+                result = await self.provider_chain.complete(
+                    msgs,
+                    tools=ATLAS_TOOL_DEFS,
+                    max_tokens=16384,
+                    temperature=0.60,
+                    top_p=0.95,
+                    top_k=20,
+                    presence_penalty=0,
+                    repetition_penalty=1,
+                    chat_template_kwargs={"enable_thinking": True}
+                )
 
             # Step 4: Tool dispatch if AI called a tool
             if result.tool_calls:
@@ -614,7 +649,20 @@ class ATLASGateway:
     async def _handle_master_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle messages to master bot"""
         user_id = str(update.effective_user.id)
-        message = update.message.text
+        
+        # Check for media content
+        message_text = update.message.text or update.message.caption or ""
+        message = message_text
+        
+        if update.message.photo:
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+            base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+            
+            message = [
+                {"type": "text", "text": message_text},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+            ]
 
         # Check if owner
         if user_id != self.owner_telegram_id:
@@ -638,7 +686,20 @@ class ATLASGateway:
     async def _handle_client_message(self, client_id: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle messages to client bots"""
         user_id = str(update.effective_user.id)
-        message = update.message.text
+        
+        # Check for media content
+        message_text = update.message.text or update.message.caption or ""
+        message = message_text
+        
+        if update.message.photo:
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+            base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+            
+            message = [
+                {"type": "text", "text": message_text},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+            ]
 
         # Log to transcript
         self.transcript_manager.log_message(client_id, {

@@ -6,7 +6,7 @@ Inspired by PicoClaw's modular provider system.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, AsyncIterator
+from typing import List, Dict, Any, Optional, AsyncIterator, Union
 from enum import Enum
 import asyncio
 import logging
@@ -42,7 +42,7 @@ class Role(str, Enum):
 class Message:
     """Normalized message format across all providers"""
     role: Role
-    content: str
+    content: Union[str, List[Dict[str, Any]]]
     name: Optional[str] = None  # For tool messages
     tool_call_id: Optional[str] = None  # For tool responses
     tool_calls: Optional[List['ToolCall']] = None  # For assistant tool calls
