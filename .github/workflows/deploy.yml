@@ -16,10 +16,25 @@ jobs:
 
       - name: Deploy to Digital Ocean
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ATLAS_OWNER_TELEGRAM_ID: ${{ secrets.ATLAS_OWNER_TELEGRAM_ID }}
+          ATLAS_OWNER_USERNAME: ${{ secrets.ATLAS_OWNER_USERNAME }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ATLAS_TIMEZONE: ${{ secrets.ATLAS_TIMEZONE || 'America/Los_Angeles' }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         with:
           host: 146.190.142.68
           username: root
           key: ${{ secrets.DO_SSH_KEY }}
+          envs: TELEGRAM_BOT_TOKEN,ATLAS_OWNER_TELEGRAM_ID,ATLAS_OWNER_USERNAME,NVIDIA_API_KEY,OPENROUTER_API_KEY,ANTHROPIC_API_KEY,OLLAMA_API_KEY,OPENAI_API_KEY,ATLAS_TIMEZONE,GITHUB_WEBHOOK_SECRET,STRIPE_WEBHOOK_SECRET,NOTION_API_KEY,NOTION_DATABASE_ID
           script: |
             set -e
 
@@ -31,6 +46,29 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             echo "✓ Code updated to $(git rev-parse --short HEAD)"
+
+            echo "=== Updating .env file ==="
+            mkdir -p /home/atlas/.atlas
+            cat <<EOF > /home/atlas/.atlas/.env
+            TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+            ATLAS_OWNER_TELEGRAM_ID=$ATLAS_OWNER_TELEGRAM_ID
+            ATLAS_OWNER_USERNAME=$ATLAS_OWNER_USERNAME
+            NVIDIA_API_KEY=$NVIDIA_API_KEY
+            OPENROUTER_API_KEY=$OPENROUTER_API_KEY
+            ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+            OLLAMA_API_KEY=$OLLAMA_API_KEY
+            OLLAMA_BASE_URL=http://localhost:11434
+            OPENAI_API_KEY=$OPENAI_API_KEY
+            ATLAS_TIMEZONE=$ATLAS_TIMEZONE
+            GITHUB_WEBHOOK_SECRET=$GITHUB_WEBHOOK_SECRET
+            STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET
+            NOTION_API_KEY=$NOTION_API_KEY
+            NOTION_DATABASE_ID=$NOTION_DATABASE_ID
+            WEBHOOK_PORT=8080
+            EOF
+            chown atlas:atlas /home/atlas/.atlas/.env
+            chmod 600 /home/atlas/.atlas/.env
+            echo "✓ .env file updated securely"
 
             echo "=== Ensuring python3-venv is installed ==="
             apt-get update -qq && apt-get install -y -qq python3-venv python3-pip > /dev/null
