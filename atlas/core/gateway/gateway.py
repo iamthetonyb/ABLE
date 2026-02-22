@@ -321,7 +321,7 @@ class ATLASGateway:
         try:
             providers.append(OllamaProvider(
                 base_url=ollama_url,
-                model="llama3.2",
+                model="qwen3.5:397b-cloud",
             ))
             logger.info("Provider added: Ollama (local fallback)")
         except Exception as e:
