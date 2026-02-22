@@ -293,13 +293,13 @@ class ATLASGateway:
                     model="qwen/qwen3.5-397b-a17b",
                     timeout=15.0
                 ))
-                # Fallback Provider: Llama 3.1 Nemotron 70b (stable & fast)
+                # Fallback Provider: Zhipu AI GLM-5 (Smart and free on NVIDIA)
                 providers.append(NVIDIANIMProvider(
                     api_key=nvidia_key,
-                    model="nvidia/llama-3.1-nemotron-70b-instruct",
+                    model="z-ai/glm5",
                     timeout=120.0
                 ))
-                logger.info("Provider added: NVIDIA NIM (Qwen + Nemotron Fallback)")
+                logger.info("Provider added: NVIDIA NIM (Qwen + GLM-5 Fallback)")
             except Exception as e:
                 logger.warning(f"Failed to init NVIDIA provider: {e}")
 
