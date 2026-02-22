@@ -287,11 +287,19 @@ class ATLASGateway:
         nvidia_key = os.environ.get("NVIDIA_API_KEY")
         if nvidia_key:
             try:
+                # Primary Provider: Qwen 397b (with 15s fast-fail timeout)
                 providers.append(NVIDIANIMProvider(
                     api_key=nvidia_key,
                     model="qwen/qwen3.5-397b-a17b",
+                    timeout=15.0
                 ))
-                logger.info("Provider added: NVIDIA NIM")
+                # Fallback Provider: Llama 3.1 Nemotron 70b (stable & fast)
+                providers.append(NVIDIANIMProvider(
+                    api_key=nvidia_key,
+                    model="nvidia/llama-3.1-nemotron-70b-instruct",
+                    timeout=120.0
+                ))
+                logger.info("Provider added: NVIDIA NIM (Qwen + Nemotron Fallback)")
             except Exception as e:
                 logger.warning(f"Failed to init NVIDIA provider: {e}")
 
