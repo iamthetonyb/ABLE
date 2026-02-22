@@ -289,7 +289,7 @@ class ATLASGateway:
             try:
                 providers.append(NVIDIANIMProvider(ProviderConfig(
                     api_key=nvidia_key,
-                    model="nvidia/llama-3.1-nemotron-70b-instruct",
+                    model="qwen/qwen3.5-397b-a17b",
                 )))
                 logger.info("Provider added: NVIDIA NIM")
             except Exception as e:
@@ -388,7 +388,13 @@ class ATLASGateway:
             result = await self.provider_chain.complete(
                 msgs,
                 tools=ATLAS_TOOL_DEFS,
-                max_tokens=4096,
+                max_tokens=16384,
+                temperature=0.60,
+                top_p=0.95,
+                top_k=20,
+                presence_penalty=0,
+                repetition_penalty=1,
+                chat_template_kwargs={"enable_thinking": True}
             )
 
             # Step 4: Tool dispatch if AI called a tool

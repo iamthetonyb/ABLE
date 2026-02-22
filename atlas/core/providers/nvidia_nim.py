@@ -92,6 +92,17 @@ class NVIDIANIMProvider(LLMProvider):
             payload["tools"] = tools
         if tool_choice:
             payload["tool_choice"] = tool_choice
+            
+        if "chat_template_kwargs" in kwargs:
+            payload["chat_template_kwargs"] = kwargs["chat_template_kwargs"]
+        if "top_p" in kwargs:
+            payload["top_p"] = kwargs["top_p"]
+        if "top_k" in kwargs:
+            payload["top_k"] = kwargs["top_k"]
+        if "presence_penalty" in kwargs:
+            payload["presence_penalty"] = kwargs["presence_penalty"]
+        if "repetition_penalty" in kwargs:
+            payload["repetition_penalty"] = kwargs["repetition_penalty"]
 
         try:
             async with session.post(
@@ -185,6 +196,17 @@ class NVIDIANIMProvider(LLMProvider):
             "max_tokens": max_tokens,
             "stream": True
         }
+        
+        if "chat_template_kwargs" in kwargs:
+            payload["chat_template_kwargs"] = kwargs["chat_template_kwargs"]
+        if "top_p" in kwargs:
+            payload["top_p"] = kwargs["top_p"]
+        if "top_k" in kwargs:
+            payload["top_k"] = kwargs["top_k"]
+        if "presence_penalty" in kwargs:
+            payload["presence_penalty"] = kwargs["presence_penalty"]
+        if "repetition_penalty" in kwargs:
+            payload["repetition_penalty"] = kwargs["repetition_penalty"]
 
         try:
             async with session.post(
