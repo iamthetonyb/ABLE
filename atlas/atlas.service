@@ -16,8 +16,8 @@ Environment="PYTHONUNBUFFERED=1"
 # Load environment from .env file
 EnvironmentFile=-/home/atlas/.atlas/atlas/.env
 
-# Run the ATLAS agent
-ExecStart=/usr/bin/python3 /home/atlas/.atlas/atlas/start.py
+# Run the ATLAS agent using venv Python
+ExecStart=/home/atlas/.atlas/venv/bin/python /home/atlas/.atlas/atlas/start.py
 
 # Restart on failure
 Restart=on-failure
