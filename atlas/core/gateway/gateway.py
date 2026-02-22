@@ -286,36 +286,20 @@ class ATLASGateway:
         """Build ProviderChain, skipping any provider whose env var is missing."""
         providers = []
 
-        nvidia_key = os.environ.get("NVIDIA_API_KEY")
-        if nvidia_key:
-            try:
-                # Primary Provider: Qwen 397b (with 15s fast-fail timeout)
-                providers.append(NVIDIANIMProvider(
-                    api_key=nvidia_key,
-                    model="qwen/qwen3.5-397b-a17b",
-                    timeout=15.0
-                ))
-                # Fallback Provider: Zhipu AI GLM-5 (Smart and free on NVIDIA)
-                providers.append(NVIDIANIMProvider(
-                    api_key=nvidia_key,
-                    model="z-ai/glm5",
-                    timeout=120.0
-                ))
-                logger.info("Provider added: NVIDIA NIM (Qwen + GLM-5 Fallback)")
-            except Exception as e:
-                logger.warning(f"Failed to init NVIDIA provider: {e}")
-
         openrouter_key = os.environ.get("OPENROUTER_API_KEY")
         if openrouter_key:
             try:
+                # Primary Provider: Qwen 2.5 72B Instruct (via OpenRouter FP8)
                 providers.append(OpenRouterProvider(ProviderConfig(
                     api_key=openrouter_key,
-                    model="anthropic/claude-3.5-sonnet",
+                    model="qwen/qwen-2.5-72b-instruct",
+                    timeout=120.0
                 )))
-                logger.info("Provider added: OpenRouter")
+                logger.info("Provider added: OpenRouter (Qwen 72B)")
             except Exception as e:
                 logger.warning(f"Failed to init OpenRouter provider: {e}")
 
+        # (OpenRouter block is now earlier, so we can remove the old Claude logic or keep it as fallback)
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
         if anthropic_key:
             try:
@@ -345,18 +329,18 @@ class ATLASGateway:
     def _init_vision_providers(self) -> ProviderChain:
         """Build ProviderChain specifically for multimodal inputs."""
         providers = []
-        nvidia_key = os.environ.get("NVIDIA_API_KEY")
-        if nvidia_key:
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+        if openrouter_key:
             try:
-                # Primary Vision Provider: Moonshot Kimi 2.5 (Massive MM on NIM)
-                providers.append(NVIDIANIMProvider(
-                    api_key=nvidia_key,
-                    model="moonshotai/kimi-k2.5",
+                # Primary Vision Provider: Moonshot Kimi 2.5 (OpenRouter)
+                providers.append(OpenRouterProvider(ProviderConfig(
+                    api_key=openrouter_key,
+                    model="moonshotai/moonshot-v1-auto", # Also known as kimi-k2.5 equivalent
                     timeout=120.0
-                ))
-                logger.info("Provider added: NVIDIA NIM Vision (Kimi 2.5)")
+                )))
+                logger.info("Provider added: OpenRouter Vision (Kimi)")
             except Exception as e:
-                logger.warning(f"Failed to init NVIDIA vision provider: {e}")
+                logger.warning(f"Failed to init OpenRouter vision provider: {e}")
                 
         # Create chain
         return ProviderChain(providers)
@@ -431,13 +415,25 @@ class ATLASGateway:
                 result = await self.provider_chain.complete(
                     msgs,
                     tools=ATLAS_TOOL_DEFS,
-                    max_tokens=16384,
+                    max_tokens=65536, # OpenRouter supports massive dynamic contexts natively 
                     temperature=0.60,
                     top_p=0.95,
                     top_k=20,
                     presence_penalty=0,
                     repetition_penalty=1,
-                    chat_template_kwargs={"enable_thinking": True}
+                    # Target atlas-cloud specifically, enabling up to 1M YaRN context expansion
+                    provider={
+                        "order": ["OpenRouter"],
+                        "allow_fallbacks": True,
+                        "require_parameters": True,
+                        "data_collection": "deny"
+                    },
+                    models=["qwen/qwen-2.5-72b-instruct"],
+                    route="fallback",
+                    # Allow massive context scaling in OpenRouter
+                    extra_body={
+                        "chat_template_kwargs": {"enable_thinking": True}
+                    }
                 )
 
             # Step 4: Tool dispatch if AI called a tool

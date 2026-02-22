@@ -117,6 +117,17 @@ class OpenRouterProvider(LLMProvider):
             payload["transforms"] = kwargs["transforms"]
         if kwargs.get("route"):
             payload["route"] = kwargs["route"]
+        if kwargs.get("provider"):
+            payload["provider"] = kwargs["provider"]
+            
+        # Optional massive context / extra routing args
+        if kwargs.get("models"):
+            payload["models"] = kwargs["models"]
+        
+        # Pass all other unhandled kwargs (like top_p, top_k, repetition_penalty) directly
+        for key in ["top_p", "top_k", "presence_penalty", "repetition_penalty", "seed"]:
+            if key in kwargs:
+                payload[key] = kwargs[key]
 
         try:
             async with session.post(
