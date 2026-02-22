@@ -280,6 +280,80 @@ skills:
     created: "2026-02-22"
     use_count: 0
 
+  # ══════════════════════════════════════════════════════════════
+  # DEPLOYMENT SKILLS
+  # ══════════════════════════════════════════════════════════════
+
+  github-integration:
+    description: "Create GitHub repos, push code, open PRs, trigger workflows"
+    triggers:
+      - "create repo"
+      - "make repo"
+      - "new repo"
+      - "push code"
+      - "open pr"
+      - "pull request"
+      - "commit to github"
+      - "push to github"
+    type: "hybrid"
+    trust_level: "L3_ACT"
+    requires_approval: true
+    approval_risk: "medium"
+    created: "2026-02-22"
+    use_count: 0
+
+  github-pages:
+    description: "Deploy static HTML/CSS/JS sites to GitHub Pages"
+    triggers:
+      - "deploy site"
+      - "host on github"
+      - "github pages"
+      - "publish html"
+      - "static site"
+      - "make it live"
+      - "put it online"
+    type: "hybrid"
+    trust_level: "L3_ACT"
+    requires_approval: true
+    approval_risk: "low"
+    created: "2026-02-22"
+    use_count: 0
+
+  vercel-deploy:
+    description: "Deploy React/Next.js frontends and serverless APIs to Vercel free plan"
+    triggers:
+      - "deploy to vercel"
+      - "vercel deploy"
+      - "deploy app"
+      - "deploy frontend"
+      - "deploy next.js"
+      - "host on vercel"
+    type: "hybrid"
+    trust_level: "L3_ACT"
+    requires_approval: true
+    approval_risk: "low"
+    created: "2026-02-22"
+    use_count: 0
+
+  digitalocean-vps:
+    description: "Provision new Digital Ocean VPS droplets for isolated environments"
+    triggers:
+      - "new server"
+      - "provision server"
+      - "create droplet"
+      - "spin up vps"
+      - "new vps"
+      - "new linux machine"
+      - "kali"
+      - "new environment"
+      - "set up a server"
+    type: "tool"
+    trust_level: "L3_ACT"
+    requires_approval: true
+    approval_risk: "high"
+    created: "2026-02-22"
+    use_count: 0
+
 # ══════════════════════════════════════════════════════════════
 # SKILL TYPES
 # ══════════════════════════════════════════════════════════════

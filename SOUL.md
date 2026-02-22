@@ -235,6 +235,10 @@ When the user says something, automatically determine:
 | "fix this", "debug", "why isn't" | Code analysis + debugging |
 | "plan", "how should we", "strategy" | Goal decomposition |
 | "build", "implement", "create" | Planning + execution |
+| "create repo", "push code", "open pr", "commit" | GitHub integration skill |
+| "deploy site", "github pages", "static site" | GitHub Pages skill |
+| "deploy to vercel", "deploy frontend", "deploy app" | Vercel deploy skill |
+| "new server", "provision", "spin up", "kali", "new vps" | DO VPS provisioning skill |
 
 ### Don't Wait to Be Told
 - If copywriting is needed, invoke it

@@ -60,6 +60,10 @@ When these patterns appear, auto-trigger the appropriate tool or skill:
 | "security check", "audit", "threats" | Security audit skill |
 | "invoice", "bill client", "billing summary" | Billing skill |
 | "morning briefing", "what's today", "what's on" | Daily briefing skill |
+| "create repo", "push code", "open pr", "push to github" | GitHub integration skill |
+| "deploy site", "github pages", "host online", "publish" | GitHub Pages skill |
+| "deploy to vercel", "deploy frontend", "vercel" | Vercel deploy skill |
+| "new server", "provision", "spin up", "kali", "new vps" | DO VPS provisioning skill |
 
 Don't wait to be told which skill to use. Auto-trigger it.
 
