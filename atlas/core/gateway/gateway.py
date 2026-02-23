@@ -457,13 +457,12 @@ class ATLASGateway:
                         repetition_penalty=1,
                         # Target atlas-cloud specifically, enabling up to 1M YaRN context expansion
                         provider={
-                            "order": ["OpenRouter"],
-                            "allow_fallbacks": True,
+                            "order": ["Atlas Cloud"],
+                            "allow_fallbacks": False,
                             "require_parameters": True,
                             "data_collection": "deny"
                         },
                         models=["qwen/qwen3.5-397b-a17b"],
-                        route="fallback",
                         # Allow massive context scaling in OpenRouter
                         extra_body={
                             "chat_template_kwargs": {"enable_thinking": True}
