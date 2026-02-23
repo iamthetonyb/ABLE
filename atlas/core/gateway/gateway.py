@@ -472,33 +472,32 @@ class ATLASGateway:
 
                 # Step 4: Tool dispatch if AI called a tool
                 if result.tool_calls:
-                    tool_call = result.tool_calls[0]
-                    
                     # Log the assistant's action into the memory array
                     msgs.append(Message(
                         role=Role.ASSISTANT,
                         content=result.content or "",
-                        tool_calls=[tool_call]
+                        tool_calls=result.tool_calls
                     ))
                     
-                    # Execute the tool
-                    tool_output = await self._handle_tool_call(tool_call, update, user_id)
-                    
-                    # Notify the user on Telegram that a tool was executed so they aren't waiting in silence
-                    if update and update.message:
-                        try:
-                            # Drop the Markdown parse mode for tool outputs to prevent unescaped char errors from code snippets
-                            await update.message.reply_text(f"⚙️ `[{tool_call.name}]`\n{tool_output}")
-                        except Exception:
-                            pass
-                            
-                    # Inject the tool observation back into the prompt for the next loop
-                    msgs.append(Message(
-                        role=Role.TOOL,
-                        content=str(tool_output),
-                        name=tool_call.name,
-                        tool_call_id=tool_call.id
-                    ))
+                    for tool_call in result.tool_calls:
+                        # Execute the tool
+                        tool_output = await self._handle_tool_call(tool_call, update, user_id)
+                        
+                        # Notify the user on Telegram that a tool was executed so they aren't waiting in silence
+                        if update and update.message:
+                            try:
+                                # Drop the Markdown parse mode for tool outputs to prevent unescaped char errors from code snippets
+                                await update.message.reply_text(f"⚙️ `[{tool_call.name}]`\n{tool_output}")
+                            except Exception:
+                                pass
+                                
+                        # Inject the tool observation back into the prompt for the next loop
+                        msgs.append(Message(
+                            role=Role.TOOL,
+                            content=str(tool_output),
+                            name=tool_call.name,
+                            tool_call_id=tool_call.id
+                        ))
                     continue
 
                 return result.content or "⚠️ Empty response from AI."
@@ -510,8 +509,11 @@ class ATLASGateway:
             if update and update.message:
                 try:
                     import json
+                    import io
                     dump = json.dumps([m.__dict__ for m in msgs], default=str, indent=2)
-                    await update.message.reply_text(f"⚠️ Payload Dump:\n```json\n{dump[:3500]}\n```")
+                    dump_bytes = io.BytesIO(dump.encode('utf-8'))
+                    dump_bytes.name = "payload_dump.json"
+                    await update.message.reply_document(document=dump_bytes, caption=f"⚠️ Exception Trace:\n{str(e)[:1000]}")
                 except Exception as dump_e:
                     pass
             return f"⚠️ AI error: {e}"
