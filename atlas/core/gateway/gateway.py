@@ -293,7 +293,7 @@ class ATLASGateway:
                 providers.append(OpenRouterProvider(
                     api_key=openrouter_key,
                     model="qwen/qwen3.5-397b-a17b",
-                    timeout=120.0
+                    timeout=600.0
                 ))
                 logger.info("Provider added: OpenRouter (Qwen 397B)")
             except Exception as e:
@@ -336,7 +336,7 @@ class ATLASGateway:
                 providers.append(OpenRouterProvider(
                     api_key=openrouter_key,
                     model="moonshotai/moonshot-v1-auto", # Also known as kimi-k2.5 equivalent
-                    timeout=120.0
+                    timeout=600.0
                 ))
                 logger.info("Provider added: OpenRouter Vision (Kimi)")
             except Exception as e:
