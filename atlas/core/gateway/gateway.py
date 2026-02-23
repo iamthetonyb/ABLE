@@ -401,6 +401,24 @@ class ATLASGateway:
 
         try:
             msgs = [Message(role=Role.SYSTEM, content=ATLAS_SYSTEM_PROMPT)]
+            
+            # Inject Persistent Memory Context
+            target_id = client_id or "master"
+            history = self.transcript_manager.get_recent_messages(target_id, limit=20)
+            # History comes back newest-first, flip to chronological
+            history.reverse()
+            
+            for log in history:
+                # Skip the current message we just logged into the database to avoid duplication
+                if log.get("direction") == "inbound" and log.get("message") == message:
+                    continue
+                    
+                log_msg = log.get("message")
+                # Only feed text history (skip base64 images to preserve context window length)
+                if isinstance(log_msg, str):
+                    role = Role.USER if log.get("direction") == "inbound" else Role.ASSISTANT
+                    msgs.append(Message(role=role, content=log_msg))
+
             msgs.append(Message(role=Role.USER, content=message))
 
             for loop_iteration in range(5):
@@ -706,15 +724,31 @@ class ATLASGateway:
                 await update.message.reply_text("❌ Denied via text message.")
             return
 
+        # Log inbound
+        self.transcript_manager.log_message("master", {
+            "user_id": user_id,
+            "message": message,
+            "direction": "inbound"
+        })
+
         # Process through pipeline without blocking the PTB user queue
         async def _run_pipeline():
             try:
                 response = await self.process_message(
                     message=message,
                     user_id=user_id,
+                    client_id="master",
                     metadata={"source": "master_telegram", "is_owner": True},
                     update=update,
                 )
+                
+                # Log outbound
+                self.transcript_manager.log_message("master", {
+                    "user_id": "bot",
+                    "message": response,
+                    "direction": "outbound"
+                })
+                
                 await update.message.reply_text(response, parse_mode="Markdown")
             except Exception as e:
                 logger.error(f"Pipeline error: {e}", exc_info=True)
