@@ -424,7 +424,14 @@ class ATLASGateway:
 
             msgs.append(Message(role=Role.USER, content=message))
 
-            for loop_iteration in range(5):
+            for loop_iteration in range(15):
+                # Send a thinking indicator to Telegram so the user knows the AI hasn't crashed
+                if update and update.message:
+                    try:
+                        await update.message.reply_text(f"⏳ `ATLAS is thinking... (Turn {loop_iteration + 1}/15)`", parse_mode="Markdown")
+                    except Exception:
+                        pass
+
                 # Route to a vision-capable provider if message is multimodal (only needed for first pass)
                 if isinstance(message, list) and loop_iteration == 0:
                     result = await self.vision_chain.complete(
@@ -497,9 +504,9 @@ class ATLASGateway:
                         ))
                     continue
 
-                return result.content or "⚠️ Empty response from AI."
+                return result.content or "⚠️ ATLAS exceeded the maximum internal thinking steps (15 turns)."
                 
-            return "⚠️ Agent exceeded maximum tool iterations (5)."
+            return "⚠️ Agent exceeded maximum tool iterations (15)."
 
         except Exception as e:
             logger.error(f"AI completion failed: {e}", exc_info=True)
