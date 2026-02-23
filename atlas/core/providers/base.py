@@ -223,18 +223,19 @@ class LLMProvider(ABC):
             }
             
             # OpenAI / OpenRouter schemas require content to be present. 
-            # If assistant is doing a tool call, content should usually be None or null, not an empty string if omitted
             if msg.role == Role.ASSISTANT and msg.tool_calls and not msg.content:
-                # Some strict parsers reject empty string for assistant tool calls, omit content entirely or pass None
-                # OpenRouter expects content to be strictly string or array, if empty, omitting is safest or passing None depending on backend. We'll omit it if empty and there are tool calls.
-                pass 
+                # Force empty string instead of omitting it to prevent Go struct unmarshalling panics
+                converted["content"] = ""
             else:
-                converted["content"] = msg.content
+                converted["content"] = msg.content or ""
 
-            if msg.name:
+            # Name is not allowed on "tool" role messages in the modern OpenAI spec, only "tool_call_id"
+            if msg.name and msg.role != Role.TOOL:
                 converted["name"] = msg.name
+                
             if msg.tool_call_id:
                 converted["tool_call_id"] = msg.tool_call_id
+                
             if msg.tool_calls:
                 converted["tool_calls"] = [
                     {
