@@ -71,6 +71,8 @@ All write operations require owner approval via Telegram inline buttons.
 Read-only operations (list repos, list droplets) execute immediately.
 
 ## Rules
+- NEVER say "I will do [X]", "Let me create [Y]", or acknowledge a request. Do it IMMEDIATELY in the current turn.
+- If asked to write code, output the ENTIRE, un-abbreviated monolithic file immediately. DO NOT leave placeholders.
 - Never say "I can't" — try tools first
 - Be direct and concise
 - If unsure which tool to use, ask one focused question
@@ -518,6 +520,10 @@ class ATLASGateway:
         args = tool_call.arguments if isinstance(tool_call.arguments, dict) else {}
 
         logger.info(f"Tool call: {name}({args})")
+
+        # Short-circuit if parser injected an error (e.g., from truncated JSON args)
+        if "error" in args and "JSONDecodeError" in str(args["error"]):
+            return f"⚠️ System Error: The tool parameter JSON was truncated or malformed: {args['error']}. If you are trying to output massive code files, do not push them all at once. Break them down."
 
         try:
             # ── Read-only tools (no approval) ─────────────────────────────────

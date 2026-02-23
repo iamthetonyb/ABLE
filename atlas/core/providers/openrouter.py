@@ -186,16 +186,24 @@ class OpenRouterProvider(LLMProvider):
                 # Parse tool calls if present
                 tool_calls = None
                 if message.get("tool_calls"):
-                    tool_calls = [
-                        ToolCall(
+                    tool_calls = []
+                    for tc in message["tool_calls"]:
+                        args_raw = tc["function"]["arguments"]
+                        parsed_args = {}
+                        if isinstance(args_raw, str):
+                            try:
+                                parsed_args = json.loads(args_raw)
+                            except json.JSONDecodeError:
+                                # Provide a fallback instead of violently crashing if the AI truncates the JSON
+                                parsed_args = {"error": f"JSONDecodeError: OpenRouter truncated the argument string: {args_raw[:100]}..." }
+                        else:
+                            parsed_args = args_raw
+                            
+                        tool_calls.append(ToolCall(
                             id=tc["id"],
                             name=tc["function"]["name"],
-                            arguments=json.loads(tc["function"]["arguments"])
-                            if isinstance(tc["function"]["arguments"], str)
-                            else tc["function"]["arguments"]
-                        )
-                        for tc in message["tool_calls"]
-                    ]
+                            arguments=parsed_args
+                        ))
 
                 input_tokens = usage.get("prompt_tokens", 0)
                 output_tokens = usage.get("completion_tokens", 0)
