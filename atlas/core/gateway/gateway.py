@@ -29,6 +29,9 @@ from core.approval.workflow import ApprovalWorkflow, ApprovalStatus
 from tools.github.client import GitHubClient
 from tools.digitalocean.client import DigitalOceanClient
 from tools.vercel.client import VercelClient
+from scheduler.cron import CronScheduler
+from core.gateway.initiative import InitiativeEngine
+from memory.hybrid_memory import HybridMemory, MemoryType
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +288,15 @@ class ATLASGateway:
         # Master bot
         self.master_bot: Optional[Application] = None
 
+        # Proactive Persistence Layer
+        self.scheduler = CronScheduler()
+        self.initiative = InitiativeEngine(self)
+        try:
+            self.memory = HybridMemory()
+        except Exception as e:
+            logger.warning(f"HybridMemory failed to initialize (continuing without it): {e}")
+            self.memory = None
+
     def _init_providers(self) -> ProviderChain:
         """Build ProviderChain, skipping any provider whose env var is missing."""
         providers = []
@@ -306,20 +318,20 @@ class ATLASGateway:
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
         if anthropic_key:
             try:
-                providers.append(AnthropicProvider(ProviderConfig(
+                providers.append(AnthropicProvider(
                     api_key=anthropic_key,
                     model="claude-opus-4-5",
-                )))
+                ))
                 logger.info("Provider added: Anthropic")
             except Exception as e:
                 logger.warning(f"Failed to init Anthropic provider: {e}")
 
         ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         try:
-            providers.append(OllamaProvider(ProviderConfig(
+            providers.append(OllamaProvider(
                 model="llama3.1",
                 base_url=ollama_url,
-            )))
+            ))
             logger.info("Provider added: Ollama (local fallback)")
         except Exception as e:
             logger.warning(f"Failed to init Ollama provider: {e}")
@@ -403,7 +415,18 @@ class ATLASGateway:
             return "⚠️ No AI providers configured. Set NVIDIA_API_KEY, OPENROUTER_API_KEY, or ANTHROPIC_API_KEY."
 
         try:
-            msgs = [Message(role=Role.SYSTEM, content=ATLAS_SYSTEM_PROMPT)]
+            active_system_prompt = ATLAS_SYSTEM_PROMPT
+            
+            # Inject memory context if available
+            if hasattr(self, 'memory') and self.memory:
+                try:
+                    recalled_context = self.memory.get_context_for_agent(objective=text_content, client_id=client_id)
+                    if recalled_context:
+                        active_system_prompt += f"\n\n## Recalled Context from Hybrid Memory\n{recalled_context}"
+                except Exception as e:
+                    logger.warning(f"Failed to fetch memory context: {e}")
+
+            msgs = [Message(role=Role.SYSTEM, content=active_system_prompt)]
             
             # Inject Persistent Memory Context
             target_id = client_id or "master"
@@ -504,7 +527,16 @@ class ATLASGateway:
                         ))
                     continue
 
-                return result.content or "⚠️ ATLAS exceeded the maximum internal thinking steps (15 turns)."
+                final_text = result.content or "⚠️ ATLAS exceeded the maximum internal thinking steps (15 turns)."
+                # Save to HybridMemory
+                if hasattr(self, 'memory') and self.memory:
+                    try:
+                        self.memory.store(content=message if isinstance(message, str) else str(message), memory_type=MemoryType.CONVERSATION, client_id=client_id)
+                        self.memory.store(content=final_text, memory_type=MemoryType.CONVERSATION, client_id=client_id)
+                    except Exception as e:
+                        logger.error(f"Failed to store memory: {e}")
+                
+                return final_text
                 
             return "⚠️ Agent exceeded maximum tool iterations (15)."
 
@@ -1013,6 +1045,12 @@ class ATLASGateway:
 
         provider_count = len(self.provider_chain.providers)
         print(f"🚀 ATLAS v2 Gateway running | {provider_count} AI provider(s) active")
+        
+        # Start the Persistence Layer (Proactive AGI)
+        self.initiative.register_jobs(self.scheduler)
+        print(f"🕰️ ATLAS Persistent Scheduler started with {len(self.scheduler.jobs)} autonomous missions")
+        asyncio.create_task(self.scheduler.run_forever(poll_interval=30.0))
+
         while True:
             await asyncio.sleep(1)
 
