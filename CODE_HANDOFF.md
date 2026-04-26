@@ -501,11 +501,14 @@ Training lanes:
 - Added `scripts/setup-telegram-webhook-https.sh` and `docs/TELEGRAM_WEBHOOK.md` so production can get a public HTTPS endpoint with Caddy. The no-domain path uses `<public-ip>.sslip.io`; custom domains are also supported.
 - Deploy now preserves existing server webhook env values when the corresponding GitHub secrets are blank, preventing a later deploy from silently reverting the server back to polling mode.
 - Added `docs/OPTIMIZATION_ROADMAP.md`, summarizing the deep-research reports as ABLE-specific follow-up work: stable-prefix prompt layout, bounded tool budgets, tiered capture/training artifacts, optional Arrow/Zstd evaluation, and Studio/media profiling.
+- Added delivery-level Telegram idempotency for cron/proactive notifications. `notification_claims(channel, job_name, run_slot)` suppresses duplicate sends even if a legacy/manual path re-enters the same cron job after the run-slot claim layer.
+- Default cron Telegram sends now use `CronScheduler.idempotent_telegram_sender()`. `InitiativeEngine._send_to_owner()` also uses the same scheduler DB when available, so morning briefing / proactive jobs share the delivery guard.
 - `github-digest` no longer sends a Telegram "Skipped — GITHUB_TOKEN not set" message. Missing optional config is logged only.
 - Added `able/tests/test_cron_leader_gate.py`: env gate defaults, explicit leader mode, Telegram mode/webhook routing, and no Telegram delivery for missing GitHub token.
 
 Validation run this patch:
 - `python3 -m py_compile able/scheduler/cron.py able/core/evolution/morning_report.py`
+- `python3 -m py_compile able/scheduler/cron.py able/core/gateway/initiative.py`
 - `python3 -m pytest able/tests/test_cron_claims.py -q`
 - `python3 -m pytest able/tests/test_evolution_scheduler.py -q`
 - `python3 -m pytest able/tests/test_cron_leader_gate.py able/tests/test_cron_claims.py able/tests/test_control_plane.py -q`
@@ -548,6 +551,7 @@ Phase 2 ALL DONE: Items 6 (durable tasks), 7 (managed agents), 8a (SSRF), 9 (str
 
 Run the now-hardened deploy path against production and verify the real operator path end-to-end:
 - activate Telegram webhook mode on production with `scripts/setup-telegram-webhook-https.sh`, then confirm `/health` reports `telegram_mode=webhook`, `telegram_polling_enabled=false`, and no `getUpdates` conflicts in logs
+- after deploy, inspect `notification_claims` in `able/data/cron_executions.db` if any duplicate Telegram reports recur; same `job_name/run_slot/channel` should have one successful delivery
 - confirm the deployed container sees `/home/able/.able/auth.json`
 - confirm tier 1 resolves to `gpt-5.4-mini` on the live server, not Nemotron
 - send a real Telegram buddy query (`How's <buddy>?`) and verify it dispatches the buddy tool path

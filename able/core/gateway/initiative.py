@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -95,6 +96,28 @@ class InitiativeEngine:
             logger.warning(f"InitiativeEngine [{job_name}]: No master_bot or owner ID — result saved to log only")
             return
 
+        delivery_key = None
+        scheduler = getattr(self.gateway, "scheduler", None)
+        if scheduler and getattr(scheduler, "db", None):
+            try:
+                from able.scheduler.cron import current_cron_context, _notification_hash
+                ctx = current_cron_context()
+                run_slot = int(ctx.get("run_slot") or (int(time.time() // 60) * 60))
+                claimed, delivery_key = scheduler.db.try_claim_notification(
+                    channel="telegram",
+                    job_name=job_name,
+                    run_slot=run_slot,
+                    message_hash=_notification_hash(message),
+                )
+                if not claimed:
+                    logger.info(
+                        "InitiativeEngine [%s]: duplicate Telegram delivery skipped",
+                        job_name,
+                    )
+                    return
+            except Exception as e:
+                logger.debug("InitiativeEngine [%s]: delivery dedupe skipped: %s", job_name, e)
+
         try:
             if len(message) > 4000:
                 chunks = [message[i:i + 4000] for i in range(0, len(message), 4000)]
@@ -102,8 +125,16 @@ class InitiativeEngine:
                     await self._send_single(chunk)
             else:
                 await self._send_single(message)
+            if delivery_key and scheduler and getattr(scheduler, "db", None):
+                scheduler.db.finish_notification_delivery(delivery_key, success=True)
             logger.info(f"InitiativeEngine [{job_name}]: Delivered via Telegram.")
         except Exception as e:
+            if delivery_key and scheduler and getattr(scheduler, "db", None):
+                scheduler.db.finish_notification_delivery(
+                    delivery_key,
+                    success=False,
+                    error=str(e),
+                )
             logger.error(f"InitiativeEngine [{job_name}]: Telegram delivery failed: {e} — result persisted to log")
 
     def _persist_result(self, job_name: str, message: str):
