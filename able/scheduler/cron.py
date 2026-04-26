@@ -6,12 +6,14 @@ Every job execution is recorded before delivery — results survive gateway rest
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import queue
 import sqlite3
 import time
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +21,10 @@ from typing import Any, Callable, Dict, List, Optional, Awaitable
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
+_CURRENT_CRON_CONTEXT: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+    "able_current_cron_context",
+    default=None,
+)
 
 # Absolute path — never relative to cwd. cwd changes between restarts (PM2, systemd)
 # break recovery if this is relative and points to a different/empty DB each time.
@@ -48,6 +54,16 @@ def _get_tz() -> ZoneInfo:
 def _now() -> datetime:
     """Current time in the configured ABLE timezone."""
     return datetime.now(_get_tz())
+
+
+def _notification_hash(text: str) -> str:
+    """Stable hash for duplicate notification suppression."""
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:32]
+
+
+def current_cron_context() -> Dict[str, Any]:
+    """Return current cron job context for nested delivery helpers."""
+    return dict(_CURRENT_CRON_CONTEXT.get() or {})
 
 # ── Simple cron expression parser ─────────────────────────────────────────
 
@@ -227,6 +243,25 @@ class CronExecutionDB:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_job_run_claims_expiry
                 ON job_run_claims (expires_at)
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS notification_claims (
+                    delivery_key TEXT PRIMARY KEY,
+                    channel TEXT NOT NULL,
+                    job_name TEXT NOT NULL,
+                    run_slot INTEGER NOT NULL,
+                    message_hash TEXT NOT NULL,
+                    claimed_by TEXT NOT NULL,
+                    claimed_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    delivered_at REAL,
+                    success INTEGER,
+                    error TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notification_claims_job_slot
+                ON notification_claims (job_name, run_slot, channel)
             """)
 
     def record_start(self, result: JobResult):
@@ -452,6 +487,118 @@ class CronExecutionDB:
             "success": bool(row[9]) if row[9] is not None else None,
         }
 
+    def try_claim_notification(
+        self,
+        *,
+        channel: str,
+        job_name: str,
+        run_slot: int,
+        message_hash: str,
+        ttl_seconds: float = 86400.0,
+    ) -> tuple[bool, str]:
+        """Atomically claim a cron notification delivery.
+
+        This is a second idempotency layer below job execution. It protects direct
+        Telegram sends inside cron jobs, so even if a legacy/manual path re-enters
+        a job and produces slightly different text, the same job/slot cannot
+        notify twice.
+        """
+        safe_channel = channel or "telegram"
+        safe_job = job_name or "unknown"
+        safe_slot = int(run_slot)
+        delivery_key = f"{safe_channel}:{safe_job}:{safe_slot}"
+        now = time.time()
+        expires_at = now + ttl_seconds
+        claimed_by = f"{os.uname().nodename}:{os.getpid()}"
+
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            conn.execute("PRAGMA busy_timeout = 5000")
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT delivered_at, success, expires_at FROM notification_claims "
+                "WHERE delivery_key = ?",
+                (delivery_key,),
+            ).fetchone()
+            if row:
+                delivered_at, success, existing_expires_at = row
+                if delivered_at is not None and success == 1:
+                    return False, delivery_key
+                if delivered_at is None and existing_expires_at and existing_expires_at > now:
+                    return False, delivery_key
+                conn.execute(
+                    """UPDATE notification_claims
+                       SET claimed_by = ?, claimed_at = ?, expires_at = ?,
+                           delivered_at = NULL, success = NULL, error = NULL
+                       WHERE delivery_key = ?""",
+                    (claimed_by, now, expires_at, delivery_key),
+                )
+                return True, delivery_key
+
+            conn.execute(
+                """INSERT INTO notification_claims
+                   (delivery_key, channel, job_name, run_slot, message_hash,
+                    claimed_by, claimed_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    delivery_key,
+                    safe_channel,
+                    safe_job,
+                    safe_slot,
+                    message_hash,
+                    claimed_by,
+                    now,
+                    expires_at,
+                ),
+            )
+            return True, delivery_key
+
+    def finish_notification_delivery(
+        self,
+        delivery_key: str,
+        *,
+        success: bool,
+        error: str | None = None,
+    ) -> None:
+        """Mark a notification delivery outcome."""
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+            conn.execute("PRAGMA busy_timeout = 5000")
+            conn.execute(
+                """UPDATE notification_claims
+                   SET delivered_at = ?, success = ?, error = ?
+                   WHERE delivery_key = ?""",
+                (
+                    time.time(),
+                    1 if success else 0,
+                    (error or "")[:500] if error else None,
+                    delivery_key,
+                ),
+            )
+
+    def get_notification_claim(self, delivery_key: str) -> Optional[Dict[str, Any]]:
+        """Fetch a notification claim for tests/status surfaces."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT delivery_key, channel, job_name, run_slot, message_hash,
+                          claimed_by, claimed_at, expires_at, delivered_at, success, error
+                   FROM notification_claims WHERE delivery_key = ?""",
+                (delivery_key,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "delivery_key": row[0],
+            "channel": row[1],
+            "job_name": row[2],
+            "run_slot": row[3],
+            "message_hash": row[4],
+            "claimed_by": row[5],
+            "claimed_at": row[6],
+            "expires_at": row[7],
+            "delivered_at": row[8],
+            "success": bool(row[9]) if row[9] is not None else None,
+            "error": row[10],
+        }
+
     def cleanup(self, max_age_days: int = 90):
         """Purge records older than max_age_days."""
         cutoff = time.time() - (max_age_days * 86400)
@@ -461,6 +608,10 @@ class CronExecutionDB:
             ).rowcount
             conn.execute(
                 "DELETE FROM job_run_claims WHERE claimed_at < ? AND finished_at IS NOT NULL",
+                (cutoff,),
+            )
+            conn.execute(
+                "DELETE FROM notification_claims WHERE claimed_at < ? AND delivered_at IS NOT NULL",
                 (cutoff,),
             )
         if deleted:
@@ -546,6 +697,41 @@ class CronScheduler:
     def disable_job(self, name: str):
         if name in self.jobs:
             self.jobs[name].enabled = False
+
+    def idempotent_telegram_sender(self, sender: Callable[[str], Awaitable[Any]]):
+        """Wrap a Telegram sender with persistent cron notification dedupe."""
+        async def _send_once(text: str):
+            ctx = current_cron_context()
+            job_name = ctx.get("job_name") or "unknown"
+            run_slot = ctx.get("run_slot") or _minute_slot(_now())
+            message_hash = _notification_hash(str(text))
+            claimed, delivery_key = self.db.try_claim_notification(
+                channel="telegram",
+                job_name=str(job_name),
+                run_slot=int(run_slot),
+                message_hash=message_hash,
+            )
+            if not claimed:
+                logger.info(
+                    "Skipping duplicate Telegram notification job=%s slot=%s hash=%s",
+                    job_name,
+                    run_slot,
+                    message_hash,
+                )
+                return None
+            try:
+                result = await sender(text)
+            except Exception as exc:
+                self.db.finish_notification_delivery(
+                    delivery_key,
+                    success=False,
+                    error=str(exc),
+                )
+                raise
+            self.db.finish_notification_delivery(delivery_key, success=True)
+            return result
+
+        return _send_once
 
     @staticmethod
     def _claim_ttl_seconds(job: CronJob) -> float:
@@ -803,10 +989,18 @@ class CronScheduler:
             tracer_name="able.cron",
         ) as span:
             try:
-                output = await asyncio.wait_for(
-                    job.task(**job.args),
-                    timeout=job.timeout_seconds,
-                )
+                ctx_token = _CURRENT_CRON_CONTEXT.set({
+                    "job_name": job.name,
+                    "run_slot": run_slot,
+                    "trigger": trigger,
+                })
+                try:
+                    output = await asyncio.wait_for(
+                        job.task(**job.args),
+                        timeout=job.timeout_seconds,
+                    )
+                finally:
+                    _CURRENT_CRON_CONTEXT.reset(ctx_token)
 
                 result.duration_s = time.time() - start
                 result.success = True
@@ -917,6 +1111,8 @@ def register_default_jobs(
     interaction_logger=None,   # InteractionLogger — passed to auditor to avoid duplicate init
 ) -> None:
     """Register all default ABLE maintenance jobs."""
+    if send_telegram:
+        send_telegram = scheduler.idempotent_telegram_sender(send_telegram)
 
     async def consolidate_memory():
         if not memory:

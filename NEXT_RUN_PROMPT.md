@@ -91,6 +91,7 @@ All four learning feedback loops are closed and tested:
 - The gateway only registers/runs autonomous cron + continuous evolution when `ABLE_CRON_ENABLED=1`; Telegram channel startup uses `ABLE_TELEGRAM_ENABLED=1` plus `ABLE_TELEGRAM_MODE=off|polling|webhook`. Webhook mode is preferred in production when a public HTTPS `ABLE_TELEGRAM_WEBHOOK_URL` reaches `/webhook/telegram`
 - `scripts/setup-telegram-webhook-https.sh` creates a Caddy HTTPS reverse proxy and writes webhook env on the DigitalOcean host. If no domain is supplied, it uses `<public-ip>.sslip.io`
 - GitHub deploy preserves existing server webhook env values when webhook GitHub secrets are blank, so manual webhook setup is not erased by the next deploy
+- Cron/proactive Telegram notifications have a second idempotency layer in `notification_claims(channel, job_name, run_slot)` so duplicate sends are suppressed even if a legacy/manual path re-enters an already-claimed run
 - `github-digest` logs missing `GITHUB_TOKEN` instead of sending a daily Telegram skip message
 - `able/tests/test_cron_claims.py` covers duplicate scheduler instances, empty-DB recovery suppression, recovery slot identity, and stale lease takeover
 - `able/tests/test_cron_leader_gate.py` covers leader env behavior, Telegram mode/webhook routing, and missing GitHub token silence
@@ -247,6 +248,7 @@ A 79-item master plan lives at `.claude/plans/luminous-wibbling-pie.md` across 7
 
 **Next immediate (HIGH VALUE):**
 - Activate production Telegram webhook mode and verify no `getUpdates` conflicts remain
+- Verify production `notification_claims` after the next nightly/morning cron window; no same job/slot/channel should deliver twice
 - B5: AutoImprover E2E pipeline test
 - C2: Temporal knowledge graph — fact lifecycle management
 - C3: Smart search pipeline — BM25+vector+rerank fusion
