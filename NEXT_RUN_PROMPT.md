@@ -247,13 +247,15 @@ A 79-item master plan lives at `.claude/plans/luminous-wibbling-pie.md` across 7
 **Completed (Phase 2.5-5):** A1 (arg sanitizer), A2 (NextAuth), A3 (PII redactor), A4 (subprocess runner), A+1 (advisor tool type), A+2 (advisor routing config), A+3 (gateway advisor injection), A+4 (advisor cost tracking), A+5 (T5 cloud advisor escalation), A+6 (subscription-aware fallback), B1 (durable task tests), B2 (overnight loop tests), B3 (context compactor tests), B4 (tool result storage tests), B6 (execution monitor tests), C1 (layered memory), E1 (concurrent tool execution).
 
 **Next immediate (HIGH VALUE):**
-- Activate production Telegram webhook mode and verify no `getUpdates` conflicts remain
-- Verify production `notification_claims` after the next nightly/morning cron window; no same job/slot/channel should deliver twice
-- B5: AutoImprover E2E pipeline test
-- C2: Temporal knowledge graph — fact lifecycle management
-- C3: Smart search pipeline — BM25+vector+rerank fusion
-- D1: Claude Agent SDK integration — replace manual T4 tool loop
-- A5-A8: Enhanced SSRF, env sanitization, plugin hardening, smart approvals
+- P0: Stable-prefix prompt/cache layout + metrics. Keep static system rules, tool schemas, routing contracts, and domain summaries at the prompt front; keep live user input, fresh telemetry, and retrieved evidence at the end. Add measurable prefix length / cache-hit telemetry where providers expose it.
+- P1: Tool/research budget controls. Add per-tool budget metadata for expensive fetch, browser, research, and audit tools. Surface budget pressure in CLI `/status`, gateway metrics, and Studio/control plane.
+- P1: Distillation artifact throughput. Make raw sessions/tool outputs the source of truth, cleaned ChatML the derived artifact, and training exports versioned. Add corpus-readiness status that is easy to inspect locally and on the server.
+- P2: Studio operator dashboards. Wire buddy roster, routing metrics, corpus status, cron notification state, and runtime health into Studio without putting Studio on the gateway hot path.
+- P2: Multimodal/ASR adapter plan. Keep raw media archived; use adapter/pseudo-token/distillation layers before changing the base reasoning model.
+- P2: Measured startup/runtime profiling. Track CLI cold start, gateway import/init, first-token latency, Studio bundle size, and Docker disk use before adding Rust/Bun/Arrow/Zstd/vLLM complexity.
+- Continue master-plan items B5, C2, C3, D1, and A5-A8 only when they support the runtime goals above.
+
+Cron/webhook status: production webhook + delivery idempotency shipped and verified on 2026-04-26. Do not spend the next run on cron unless duplicate Telegram reports recur after that deploy. If they recur, inspect `notification_claims(channel, job_name, run_slot)` first.
 
 **Medium value (sessions 4-6):** A4-A8 remaining security, C4-C6 memory upgrades, D2-D5 advanced capabilities.
 
@@ -264,9 +266,8 @@ A 79-item master plan lives at `.claude/plans/luminous-wibbling-pie.md` across 7
 Advance ABLE's scaffolding and operator usefulness. Prefer work that makes ABLE more self-owned, more testable, more deployable, and more capable of learning from its own behavior.
 
 Good work usually looks like:
-- implement the next items from the master plan priority order
+- implement the next item from the enhancement focus below
 - grow the distillation corpus toward 100+ pairs for H100 fine-tuning
-- verify the live production Telegram + OAuth path after deploy changes
 - cut live startup and first-response latency further
 - harden runtime seams (deploy, gateway, approval, control plane)
 - add Studio dashboard integration for buddy, roster, operator profile, and routing metrics
@@ -274,13 +275,44 @@ Good work usually looks like:
 - add missing tests around new or risky surfaces
 - fix doc/runtime drift
 
+## Next-Run Enhancement Focus
+
+Use `docs/OPTIMIZATION_ROADMAP.md` as the implementation guide. The goal is not a broad rewrite; the goal is measurable operator value with small, testable seams.
+
+1. Stable-prefix prompt/cache layout:
+   - Inspect `able/core/providers/openai_oauth.py`, `able/core/providers/base.py`, `able/core/routing/prompt_enricher.py`, `able/core/gateway/gateway.py`, and `able/core/routing/prometheus_exporter.py`.
+   - Add or verify a prompt assembly boundary that keeps static prefix material stable across turns.
+   - Add metrics/tests for prefix bytes/tokens and provider cache-hit fields where available.
+
+2. Tool/research budgets:
+   - Inspect `able/core/gateway/tool_registry.py`, `able/core/gateway/tool_defs/`, `able/core/gateway/execution_monitor.py`, and `able/core/gateway/tool_result_storage.py`.
+   - Add metadata for expensive tools: default budget, max calls, timeout, retry cap, and whether results should persist to disk.
+   - Make budget pressure visible in `/status`, metrics, and control-plane output.
+
+3. Distillation artifact throughput:
+   - Inspect `able/core/distillation/harvest_runner.py`, `able/core/distillation/corpus_builder.py`, `able/core/distillation/training/`, and `able/evals/collect_results.py`.
+   - Preserve raw artifacts, version cleaned artifacts, and expose a local/server corpus-readiness command or metric.
+   - Prefer T4-safe 9B/Gemma E4B paths before spending H100 time.
+
+4. Studio operator surfaces:
+   - Inspect `able-studio/app/`, gateway `/metrics/*`, `/api/buddy`, `/control/*`, and SSE `/events`.
+   - Add dashboard cards only for already-available data first: buddy, routing, corpus, cron notification state, health.
+   - Keep Studio out of gateway startup/import hot path.
+
+5. Multimodal/ASR adapter plan:
+   - Inspect CLI `/image` and `/audio` handling plus Telegram media paths before adding model features.
+   - Keep raw media as source of truth; derive transcripts/features separately.
+   - Do not swap base model because of audio/media work; use adapters/export paths first.
+
+Do not add Redis/Celery/Postgres queues, Rust rewrites, Arrow/Zstd, Bun bytecode, or vLLM serving unless a measured bottleneck proves that exact dependency is needed.
+
 ## How To Choose Work
 
 Use this order unless the user gives a more specific task:
 
-1. Read the master plan at `.claude/plans/luminous-wibbling-pie.md` — find the next uncompleted item from the priority order.
-2. Cross-reference with `CODE_HANDOFF.md` "Next-Run Objectives" for any urgent items.
-3. Prefer correctness and data throughput over broad new features.
+1. Start with "Next-Run Enhancement Focus" above and `docs/OPTIMIZATION_ROADMAP.md`.
+2. Cross-reference `.claude/plans/luminous-wibbling-pie.md` and `CODE_HANDOFF.md` for conflicts or higher-risk gaps.
+3. Prefer correctness, data throughput, and measured latency wins over broad new features.
 4. Prefer real operator/runtime value over speculative architecture.
 5. If you add or change behavior, add tests for that seam.
 6. Keep docs factual. No roadmap hype, no marketing copy.

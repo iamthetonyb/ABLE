@@ -63,6 +63,35 @@ This doc converts the local deep-research notes into ABLE-specific engineering w
 - Docker disk usage before/after deploy prune.
 - Corpus artifact growth by raw, cleaned, and export tiers.
 
+## Recommended Next Implementation Sequence
+
+1. Stable-prefix telemetry first:
+   - Add prompt-prefix length/cache-hit metrics without changing provider selection.
+   - Acceptance: tests prove static prefix material is stable while turn-specific material changes at the tail.
+
+2. Tool budget metadata second:
+   - Add budget/risk/cost metadata to expensive tools before adding new tools.
+   - Acceptance: CLI `/status`, gateway metrics, and control-plane output expose budget pressure.
+
+3. Distillation artifact tiering third:
+   - Make raw capture, cleaned ChatML, embeddings/features, and training exports separate named tiers.
+   - Acceptance: corpus readiness can be checked from local CLI and server logs without reading raw JSONL manually.
+
+4. Studio metrics fourth:
+   - Surface existing gateway data before building new dashboards.
+   - Acceptance: Studio can show buddy, routing, corpus, cron notification, and health summaries from current APIs.
+
+5. Multimodal adapter plan fifth:
+   - Keep raw media archived and derived features versioned.
+   - Acceptance: ASR/media path can improve without changing the base reasoning model or prompt contract.
+
+## Do Not Start With
+
+- Redis/Celery/Postgres queue migration for cron unless ABLE moves to multi-worker or cross-host scheduling.
+- Rust/Bun/Arrow/Zstd/vLLM unless measurement gates show that exact layer is the bottleneck.
+- New Studio-heavy visual systems before existing metrics are wired and measured.
+- Model swaps for media/ASR; use adapter, transcript, feature, and distillation paths first.
+
 ## Not Recommended Yet
 
 - Redis/Celery for cron dedupe: unnecessary while the production shape is one gateway container plus SQLite-backed durable claims. Add a queue only when jobs need multi-worker throughput or cross-host scheduling.
