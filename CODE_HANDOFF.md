@@ -505,6 +505,7 @@ Training lanes:
 - Default cron Telegram sends now use `CronScheduler.idempotent_telegram_sender()`. `InitiativeEngine._send_to_owner()` also uses the same scheduler DB when available, so morning briefing / proactive jobs share the delivery guard.
 - `github-digest` no longer sends a Telegram "Skipped — GITHUB_TOKEN not set" message. Missing optional config is logged only.
 - Added `able/tests/test_cron_leader_gate.py`: env gate defaults, explicit leader mode, Telegram mode/webhook routing, and no Telegram delivery for missing GitHub token.
+- Recentered the next-run handoff on the remaining system-improvement lane: stable-prefix cache layout, tool budgets, distillation artifact tiering, Studio metrics, multimodal adapters, and measured runtime profiling. Cron is now monitor-only unless duplicate reports recur after the 2026-04-26 webhook/idempotency deploy.
 
 Validation run this patch:
 - `python3 -m py_compile able/scheduler/cron.py able/core/evolution/morning_report.py`
@@ -547,17 +548,29 @@ Validation run this patch:
 Phase 0 (gateway robustness), Phase 1 Items 1-5 (TurboQuant, Gemma 4, DeepTeam, Hermes quick wins) — DONE.
 Phase 2 ALL DONE: Items 6 (durable tasks), 7 (managed agents), 8a (SSRF), 9 (structured handoffs), 10 (behavioral benchmarks), buddy gamification wiring.
 
-### Priority 1: Live production verification
+### Priority 1: Production sanity checks
 
-Run the now-hardened deploy path against production and verify the real operator path end-to-end:
-- activate Telegram webhook mode on production with `scripts/setup-telegram-webhook-https.sh`, then confirm `/health` reports `telegram_mode=webhook`, `telegram_polling_enabled=false`, and no `getUpdates` conflicts in logs
-- after deploy, inspect `notification_claims` in `able/data/cron_executions.db` if any duplicate Telegram reports recur; same `job_name/run_slot/channel` should have one successful delivery
+Webhook mode and cron notification idempotency shipped and were verified on production on 2026-04-26. Do not re-open cron as the default next task unless duplicate Telegram reports recur after that deploy. If duplicates recur, inspect `notification_claims(channel, job_name, run_slot)` in `able/data/cron_executions.db` first; the same job/slot/channel should only have one successful delivery.
+
+Keep these as quick sanity checks after deploy/runtime changes:
+- confirm `/health` reports `telegram_mode=webhook`, `telegram_polling_enabled=false`, and `telegram_webhook_enabled=true`
+- confirm logs show no `getUpdates` conflicts
 - confirm the deployed container sees `/home/able/.able/auth.json`
 - confirm tier 1 resolves to `gpt-5.4-mini` on the live server, not Nemotron
 - send a real Telegram buddy query (`How's <buddy>?`) and verify it dispatches the buddy tool path
-- confirm the new CI smoke stays green on PRs and main pushes
+- confirm CI smoke stays green on PRs and main pushes
 
-### Priority 1: Studio fully wired ✓ (completed 2026-04-07)
+### Priority 1.5: Next enhancement lane
+
+Use `docs/OPTIMIZATION_ROADMAP.md` as the implementation guide. The next run should focus on missed system improvements that produce measurable operator value:
+- stable-prefix prompt/cache layout and metrics across provider prompt assembly
+- per-tool budget metadata for expensive fetch/browser/research/audit tools, visible in CLI `/status`, metrics, and Studio/control-plane surfaces
+- distillation artifact throughput: raw artifacts as source of truth, cleaned ChatML as versioned derived data, and easy corpus-readiness status locally and on server
+- Studio dashboards for already-available data: buddy roster, routing metrics, corpus status, cron notification state, and runtime health
+- multimodal/ASR adapter plan: preserve raw media, derive transcripts/features separately, and avoid base-model swaps for media work
+- measured startup/runtime profiling before adding Rust, Bun, Arrow, Zstd, Redis/Celery, Postgres queues, or vLLM
+
+### Completed: Studio fully wired ✓ (completed 2026-04-07)
 
 All 10 Studio API routes built and operational. Gateway has `/api/buddy`, `/metrics/*`, `/events` (SSE), and `/api/chat`. Studio chat now routes through TrustGate → enricher → interaction_log → distillation. Corpus metric card and live events feed on dashboard.
 
